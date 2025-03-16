@@ -12,6 +12,10 @@ const nextConfig = {
     // Enable strict mode for ESLint
     ignoreDuringBuilds: false,
   },
+  // Set custom port for development server
+  experimental: {
+    serverComponentsExternalPackages: [],
+  },
 };
 
 module.exports = nextConfig; 

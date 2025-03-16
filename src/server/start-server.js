@@ -11,8 +11,8 @@ const { spawn } = require('child_process');
 // Path to the downloader script
 const downloaderPath = path.join(__dirname, 'downloader.js');
 
-// Default port
-const port = process.env.PORT || 3001;
+// Custom port configuration
+const port = process.env.PORT || 8124;
 
 // Start the downloader in browser mode
 console.log('Starting Internet Archive downloader server...');
