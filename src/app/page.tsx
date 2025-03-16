@@ -24,7 +24,7 @@ type FormValues = z.infer<typeof formSchema>;
 
 export default function Home() {
   // Default download path from environment variable
-  const defaultDownloadPath = process.env.DEFAULT_DOWNLOAD_PATH || "/mnt/jellyfin/download";
+  const defaultDownloadPath = process.env.DEFAULT_DOWNLOAD_PATH || "/mnt/jellyfin/downloads";
   
   const [isLoading, setIsLoading] = useState(false);
   const [downloadStatus, setDownloadStatus] = useState<string | null>(null);
