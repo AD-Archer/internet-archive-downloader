@@ -4,6 +4,9 @@ import path from "path";
 import os from "os";
 import { promises as fs } from "fs";
 
+// Server configuration
+const SERVER_URL = process.env.DOWNLOADER_SERVER_URL || 'http://localhost:9124';
+
 /**
  * DELETE handler to remove an item from the queue
  */
@@ -21,54 +24,55 @@ export async function DELETE(
       );
     }
     
-    // Try to connect to the downloader server
-    try {
-      await axios.delete(`http://localhost:3001/api/queue/${id}`);
-      return NextResponse.json({ success: true, message: "Item removed from queue" });
-    } catch (serverError) {
-      console.error("Error connecting to downloader server:", serverError);
-      
-      // If server is not running, try to remove from the queue file directly
-      try {
-        // Try the default queue location
-        const queuePath = path.join(os.homedir(), '.internet-archive-downloader', 'queue.json');
-        let queue = [];
-        
-        try {
-          const data = await fs.readFile(queuePath, 'utf8');
-          queue = JSON.parse(data);
-        } catch (readError) {
-          // Try the temp location if default fails
-          const tempQueuePath = path.join(os.tmpdir(), 'archive-download-queue.json');
-          const data = await fs.readFile(tempQueuePath, 'utf8');
-          queue = JSON.parse(data);
-        }
-        
-        // Filter out the item with the given ID
-        const filteredQueue = queue.filter((item: any) => item.id !== id);
-        
-        // Write back to both possible locations
-        try {
-          await fs.writeFile(queuePath, JSON.stringify(filteredQueue, null, 2), 'utf8');
-        } catch (writeError) {
-          console.error("Error writing to default queue location:", writeError);
-        }
-        
-        try {
-          const tempQueuePath = path.join(os.tmpdir(), 'archive-download-queue.json');
-          await fs.writeFile(tempQueuePath, JSON.stringify(filteredQueue, null, 2), 'utf8');
-        } catch (writeError) {
-          console.error("Error writing to temp queue location:", writeError);
-        }
-        
-        return NextResponse.json({ success: true, message: "Item removed from queue" });
-      } catch (fileError) {
-        console.error("Error removing item from queue file:", fileError);
-        throw new Error("Failed to remove item from queue");
-      }
-    }
+    // Connect to the downloader server
+    await axios.delete(`${SERVER_URL}/api/queue/${id}`);
+    return NextResponse.json({ success: true, message: "Item removed from queue" });
   } catch (error) {
     console.error("Error removing item from queue:", error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Unknown error" },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * POST handler to retry a failed download
+ */
+export async function POST(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const { id } = params;
+    
+    if (!id) {
+      return NextResponse.json(
+        { error: "Item ID is required" },
+        { status: 400 }
+      );
+    }
+    
+    // Get the action from the request body
+    const body = await request.json();
+    const { action } = body;
+    
+    if (action === "prioritize") {
+      // Prioritize the download
+      await axios.post(`${SERVER_URL}/api/queue/${id}/prioritize`);
+      return NextResponse.json({ success: true, message: "Download prioritized" });
+    } else if (action === "retry") {
+      // Retry the download
+      await axios.post(`${SERVER_URL}/api/queue/${id}/retry`);
+      return NextResponse.json({ success: true, message: "Download queued for retry" });
+    } else {
+      return NextResponse.json(
+        { error: "Invalid action" },
+        { status: 400 }
+      );
+    }
+  } catch (error) {
+    console.error("Error processing download action:", error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unknown error" },
       { status: 500 }

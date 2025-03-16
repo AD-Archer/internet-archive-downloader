@@ -12,11 +12,22 @@ interface DownloadJob {
   url: string;
   destination: string;
   formats: Record<string, boolean>;
-  status: "queued" | "downloading" | "completed" | "failed";
+  status: "queued" | "downloading" | "completed" | "failed" | "fetching_metadata";
   progress: number;
+  fileProgress?: number;
+  currentFile?: string;
+  fileIndex?: number;
+  totalFiles?: number;
+  totalSize?: number;
+  totalSizeFormatted?: string;
   estimatedTime?: string;
+  downloadSpeed?: string;
   error?: string;
+  priority?: "high" | "normal" | "low";
   createdAt: string;
+  completedAt?: string;
+  message?: string;
+  title?: string;
 }
 
 // Schema for download request validation
@@ -28,10 +39,14 @@ const downloadSchema = z.object({
     mov: true,
     mkv: true,
   }),
+  priority: z.enum(["high", "normal", "low"]).optional().default("normal"),
 });
 
 // Path to the downloader script
 const downloaderPath = path.join(process.cwd(), 'src', 'server', 'downloader.js');
+
+// Server configuration
+const SERVER_URL = process.env.DOWNLOADER_SERVER_URL || 'http://localhost:9124';
 
 // Helper function to extract file details from Internet Archive URL
 async function getArchiveDetails(url: string) {
@@ -124,41 +139,66 @@ function startDownloader(job: DownloadJob) {
 // Function to get queue from the downloader server
 async function getQueue(): Promise<DownloadJob[]> {
   try {
-    // Try to connect to the downloader server
-    const response = await axios.get('http://localhost:3001/api/queue');
+    // Connect to the downloader server
+    const response = await axios.get(`${SERVER_URL}/api/queue`);
     return response.data.queue || [];
   } catch (error) {
     console.error("Error connecting to downloader server:", error);
-    
-    // If server is not running, try to read the queue file directly
-    try {
-      const queuePath = path.join(os.homedir(), '.internet-archive-downloader', 'queue.json');
-      const data = await fs.readFile(queuePath, 'utf8');
-      return JSON.parse(data);
-    } catch (fileError) {
-      console.error("Error reading queue file:", fileError);
-      return [];
-    }
+    return [];
+  }
+}
+
+// Function to get queue stats from the downloader server
+async function getQueueStats() {
+  try {
+    // Connect to the downloader server
+    const response = await axios.get(`${SERVER_URL}/api/queue/stats`);
+    return response.data.stats || {};
+  } catch (error) {
+    console.error("Error connecting to downloader server:", error);
+    return {};
   }
 }
 
 // Function to add a job to the queue
-async function addToQueue(job: DownloadJob): Promise<DownloadJob> {
+async function addToQueue(job: Partial<DownloadJob>): Promise<DownloadJob> {
   try {
-    // Try to connect to the downloader server
-    const response = await axios.post('http://localhost:3001/api/queue', {
+    // Connect to the downloader server
+    const response = await axios.post(`${SERVER_URL}/api/queue`, {
       url: job.url,
-      destination: job.destination
+      destination: job.destination,
+      formats: job.formats,
+      priority: job.priority
     });
     
     return response.data.job;
   } catch (error) {
     console.error("Error connecting to downloader server:", error);
-    
-    // If server is not running, start the downloader directly
-    startDownloader(job);
-    
-    return job;
+    throw new Error("Failed to connect to downloader server");
+  }
+}
+
+// Function to search Internet Archive
+async function searchArchive(query: string) {
+  try {
+    const response = await axios.get(`${SERVER_URL}/api/search`, {
+      params: { query }
+    });
+    return response.data.results || [];
+  } catch (error) {
+    console.error("Error searching Internet Archive:", error);
+    throw new Error("Failed to search Internet Archive");
+  }
+}
+
+// Function to get metadata for an Internet Archive item
+async function getArchiveMetadata(identifier: string) {
+  try {
+    const response = await axios.get(`${SERVER_URL}/api/metadata/${identifier}`);
+    return response.data.metadata || {};
+  } catch (error) {
+    console.error("Error fetching metadata:", error);
+    throw new Error("Failed to fetch metadata");
   }
 }
 
@@ -178,33 +218,18 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    // Get URL and destination from validated data
-    const { url, destination, formats } = result.data;
-    
-    // Get archive details
-    const details = await getArchiveDetails(url);
-    
-    // Generate a unique ID for the job
-    const id = `job_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-    
-    // Create job object
-    const job: DownloadJob = {
-      id,
-      url,
-      destination: destination || path.join(os.homedir(), 'Downloads', 'internet-archive'),
-      formats,
-      status: "queued",
-      progress: 0,
-      createdAt: new Date().toISOString(),
-    };
+    // Get data from validated request
+    const { url, destination, formats, priority } = result.data;
     
     // Add to queue
-    await addToQueue(job);
+    const job = await addToQueue({
+      url,
+      destination,
+      formats,
+      priority
+    });
     
-    // Start the downloader process
-    startDownloader(job);
-    
-    return NextResponse.json({ success: true, job, details });
+    return NextResponse.json({ success: true, job });
   } catch (error) {
     console.error("Error processing download request:", error);
     
@@ -219,7 +244,8 @@ export async function POST(request: NextRequest) {
 export async function GET() {
   try {
     const queue = await getQueue();
-    return NextResponse.json({ queue });
+    const stats = await getQueueStats();
+    return NextResponse.json({ queue, stats });
   } catch (error) {
     console.error("Error retrieving queue:", error);
     return NextResponse.json(
