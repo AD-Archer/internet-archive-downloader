@@ -43,15 +43,27 @@ const writeHistory = async (history: any) => {
 };
 
 // GET handler for retrieving download history
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const history = await readHistory();
-    return NextResponse.json(history);
+    // Read history data
+    const historyData = await readHistory();
+    
+    // Get limit from query params
+    const url = new URL(request.url);
+    const limitParam = url.searchParams.get('limit');
+    const limit = limitParam ? parseInt(limitParam, 10) : 100;
+    
+    // Limit the number of history items returned
+    const limitedHistory = {
+      history: historyData.history.slice(0, limit)
+    };
+    
+    return NextResponse.json(limitedHistory);
   } catch (error) {
     console.error("Error retrieving history:", error);
     return NextResponse.json({ 
       success: false, 
-      message: "Failed to retrieve download history" 
+      message: "Server error" 
     }, { status: 500 });
   }
 }
@@ -61,29 +73,31 @@ export async function POST(request: NextRequest) {
   try {
     const data = await request.json();
     
-    if (!data.url || !data.downloadPath || !data.fileTypes) {
+    if (!data.url) {
       return NextResponse.json({ 
         success: false, 
         message: "Missing required fields" 
       }, { status: 400 });
     }
     
+    // Read current history
     const historyData = await readHistory();
     const history = historyData.history || [];
     
-    // Add new download to history
-    const newDownload = {
+    // Add new history item
+    const newHistoryItem = {
       id: Date.now().toString(),
       url: data.url,
-      downloadPath: data.downloadPath,
-      fileTypes: data.fileTypes,
+      downloadPath: data.downloadPath || '/downloads',
+      fileTypes: data.fileTypes || [],
       isPlaylist: data.isPlaylist || false,
-      status: data.status || "pending",
+      status: data.status || 'completed',
       timestamp: new Date().toISOString(),
-      message: data.message,
+      message: data.message || 'Download completed',
     };
     
-    history.unshift(newDownload);
+    // Add to the beginning of the array
+    history.unshift(newHistoryItem);
     
     // Keep only the last 100 downloads
     if (history.length > 100) {
@@ -96,16 +110,43 @@ export async function POST(request: NextRequest) {
     if (success) {
       return NextResponse.json({ 
         success: true, 
-        message: "Download added to history" 
+        message: "History updated",
+        id: newHistoryItem.id
       });
     } else {
       return NextResponse.json({ 
         success: false, 
-        message: "Failed to save download history" 
+        message: "Failed to update history" 
       }, { status: 500 });
     }
   } catch (error) {
     console.error("Error adding to history:", error);
+    return NextResponse.json({ 
+      success: false, 
+      message: "Server error" 
+    }, { status: 500 });
+  }
+}
+
+// DELETE handler for clearing history
+export async function DELETE(request: NextRequest) {
+  try {
+    // Write empty history
+    const success = await writeHistory({ history: [] });
+    
+    if (success) {
+      return NextResponse.json({ 
+        success: true, 
+        message: "History cleared" 
+      });
+    } else {
+      return NextResponse.json({ 
+        success: false, 
+        message: "Failed to clear history" 
+      }, { status: 500 });
+    }
+  } catch (error) {
+    console.error("Error clearing history:", error);
     return NextResponse.json({ 
       success: false, 
       message: "Server error" 

@@ -4,9 +4,11 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import axios from "axios";
-import DownloadHistory from "./components/DownloadHistory";
-import DownloadQueue from "./components/DownloadQueue";
+import axios from "axios";  
+import DownloadHistory from "../components/DownloadHistory";
+import DownloadQueue from "../components/DownloadQueue";
+import { useDownload } from "@/context/DownloadContext";
+import QueueRepairTool from "@/components/QueueRepairTool";
 
 // Form validation schema
 const formSchema = z.object({
@@ -22,12 +24,19 @@ const formSchema = z.object({
 
 type FormValues = z.infer<typeof formSchema>;
 
+/**
+ * Home page component with download form and queue display
+ */
 export default function Home() {
   // Default download path from environment variable
   const defaultDownloadPath = process.env.DEFAULT_DOWNLOAD_PATH || "/mnt/jellyfin/downloads";
   
   const [isLoading, setIsLoading] = useState(false);
   const [downloadStatus, setDownloadStatus] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // Get addToQueue function from context
+  const { addToQueue } = useDownload();
   
   // Available file types
   const fileTypeOptions = [
@@ -42,7 +51,7 @@ export default function Home() {
   ];
   
   // Initialize form with react-hook-form
-  const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm<FormValues>({
+  const { register, handleSubmit, watch, setValue, reset, formState: { errors, isValid } } = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       downloadPath: defaultDownloadPath,
@@ -53,23 +62,47 @@ export default function Home() {
   
   // Watch for changes to form values
   const selectedFileTypes = watch("fileTypes");
-  const isPlaylist = watch("isPlaylist");
   
   // Handle form submission
   const onSubmit = async (data: FormValues) => {
-    setIsLoading(true);
-    setDownloadStatus("Starting download...");
+    // Prevent multiple submissions
+    if (isSubmitting) return;
     
     try {
-      // Add to download queue
-      const downloadResponse = await axios.post("/api/download", data);
+      setIsSubmitting(true);
+      setIsLoading(true);
+      setDownloadStatus("Starting download...");
       
-      setDownloadStatus(`${downloadResponse.data.message}`);
+      // Convert fileTypes array to formats object for the context
+      const formats: Record<string, boolean> = {};
+      data.fileTypes.forEach(type => {
+        formats[type] = true;
+      });
+      
+      // Add to download queue using context function
+      await addToQueue(data.url, formats, data.isPlaylist);
+      
+      setDownloadStatus(`Added to download queue: ${data.url}`);
+      
+      // Reset form URL field for next submission
+      reset({
+        ...data,
+        url: ''
+      });
     } catch (error) {
-      setDownloadStatus("Error starting download. Please check the console for details.");
       console.error("Download error:", error);
+      
+      let errorMessage = "Error starting download. Please try again.";
+      if (axios.isAxiosError(error) && error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      } else if (error instanceof Error) {
+        errorMessage = error.message;
+      }
+      
+      setDownloadStatus(`Error: ${errorMessage}`);
     } finally {
       setIsLoading(false);
+      setIsSubmitting(false);
     }
   };
   
@@ -100,6 +133,7 @@ export default function Home() {
               type="text"
               placeholder="https://archive.org/details/example"
               className="w-full"
+              disabled={isSubmitting}
               {...register("url")}
             />
             {errors.url && (
@@ -116,6 +150,7 @@ export default function Home() {
               id="downloadPath"
               type="text"
               className="w-full"
+              disabled={isSubmitting}
               {...register("downloadPath")}
             />
             {errors.downloadPath && (
@@ -134,11 +169,12 @@ export default function Home() {
                   key={type.value} 
                   className={`
                     flex items-center justify-center p-3 rounded-lg cursor-pointer border transition-all
+                    ${isSubmitting ? 'opacity-50 cursor-not-allowed' : ''}
                     ${selectedFileTypes?.includes(type.value) 
                       ? 'bg-[var(--primary)] text-white border-[var(--primary)]' 
                       : 'bg-[var(--input-bg)] border-[var(--input-border)] hover:border-[var(--primary)]'}
                   `}
-                  onClick={() => toggleFileType(type.value)}
+                  onClick={() => !isSubmitting && toggleFileType(type.value)}
                 >
                   <span className="font-medium">{type.label}</span>
                 </div>
@@ -155,6 +191,7 @@ export default function Home() {
               id="isPlaylist"
               type="checkbox"
               className="h-5 w-5 accent-[var(--primary)]"
+              disabled={isSubmitting}
               {...register("isPlaylist")}
             />
             <label htmlFor="isPlaylist" className="ml-3 text-sm font-medium">
@@ -165,7 +202,7 @@ export default function Home() {
           {/* Submit Button */}
           <button
             type="submit"
-            disabled={isLoading}
+            disabled={isLoading || isSubmitting || !isValid}
             className="btn btn-primary w-full mt-6"
           >
             {isLoading ? "Adding to Queue..." : "Add to Download Queue"}
@@ -174,7 +211,7 @@ export default function Home() {
         
         {/* Download Status */}
         {downloadStatus && (
-          <div className={`mt-6 p-4 rounded-lg ${downloadStatus.includes("failed") ? "bg-red-50 text-red-700" : "bg-blue-50 text-blue-700"}`}>
+          <div className={`mt-6 p-4 rounded-lg ${downloadStatus.includes("Error") ? "bg-red-50 text-red-700" : "bg-blue-50 text-blue-700"}`}>
             <p>{downloadStatus}</p>
           </div>
         )}
@@ -188,6 +225,11 @@ export default function Home() {
       {/* Download History */}
       <div className="card max-w-5xl mx-auto p-8">
         <DownloadHistory />
+      </div>
+      
+      {/* Queue Repair Tool */}
+      <div className="card max-w-5xl mx-auto p-8">
+        <QueueRepairTool />
       </div>
     </div>
   );

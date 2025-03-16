@@ -27,6 +27,49 @@ type QueueItem = {
 // Path to queue data file
 const queueFilePath = path.join(process.cwd(), "data", "queue.json");
 
+/**
+ * Attempts to fix corrupted JSON data
+ * @param data The potentially corrupted JSON string
+ * @returns A valid JSON object or empty default
+ */
+const fixCorruptedJson = (data: string): { queue: QueueItem[] } => {
+  try {
+    // First try normal parsing
+    return JSON.parse(data);
+  } catch (error) {
+    console.error("JSON parse error, attempting to fix:", error);
+    
+    try {
+      // Try to fix common JSON corruption issues
+      
+      // 1. Remove any trailing commas before closing brackets
+      let fixedData = data.replace(/,\s*([\]}])/g, '$1');
+      
+      // 2. Add missing closing brackets if needed
+      const openBraces = (data.match(/\{/g) || []).length;
+      const closeBraces = (data.match(/\}/g) || []).length;
+      if (openBraces > closeBraces) {
+        fixedData = fixedData + '}'.repeat(openBraces - closeBraces);
+      }
+      
+      // 3. Add missing closing square brackets if needed
+      const openBrackets = (data.match(/\[/g) || []).length;
+      const closeBrackets = (data.match(/\]/g) || []).length;
+      if (openBrackets > closeBrackets) {
+        fixedData = fixedData + ']'.repeat(openBrackets - closeBrackets);
+      }
+      
+      // Try parsing the fixed data
+      return JSON.parse(fixedData);
+    } catch (fixError) {
+      console.error("Failed to fix JSON, returning empty queue:", fixError);
+      
+      // If all else fails, return an empty queue
+      return { queue: [] };
+    }
+  }
+};
+
 // Read queue data from file
 const readQueue = async (): Promise<{ queue: QueueItem[] }> => {
   try {
@@ -35,14 +78,15 @@ const readQueue = async (): Promise<{ queue: QueueItem[] }> => {
     }
     
     const data = await fs.promises.readFile(queueFilePath, "utf-8");
-    return JSON.parse(data);
+    // Use the fix function instead of direct JSON.parse
+    return fixCorruptedJson(data);
   } catch (error) {
     console.error("Error reading queue data:", error);
     return { queue: [] };
   }
 };
 
-// Write queue data to file
+// Write queue data to file with backup
 const writeQueue = async (data: { queue: QueueItem[] }): Promise<boolean> => {
   try {
     // Create data directory if it doesn't exist
@@ -51,7 +95,19 @@ const writeQueue = async (data: { queue: QueueItem[] }): Promise<boolean> => {
       await fs.promises.mkdir(dataDir, { recursive: true });
     }
     
-    await fs.promises.writeFile(queueFilePath, JSON.stringify(data, null, 2));
+    // Create a backup of the current file if it exists
+    if (fs.existsSync(queueFilePath)) {
+      const backupPath = `${queueFilePath}.backup`;
+      await fs.promises.copyFile(queueFilePath, backupPath);
+    }
+    
+    // Write the new data atomically by writing to a temp file first
+    const tempFilePath = `${queueFilePath}.temp`;
+    await fs.promises.writeFile(tempFilePath, JSON.stringify(data, null, 2));
+    
+    // Rename the temp file to the actual file (atomic operation)
+    await fs.promises.rename(tempFilePath, queueFilePath);
+    
     return true;
   } catch (error) {
     console.error("Error writing queue data:", error);
