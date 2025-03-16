@@ -258,15 +258,18 @@ async function downloadWithWget(url, destination, jobId, fileIndex, totalFiles) 
 
 /**
  * Check if a file should be downloaded based on its extension
+ * @param {string} filename - Filename to check
+ * @param {string[]} [formats] - Array of allowed formats, defaults to global allowedFormats
+ * @returns {boolean} Whether the file should be downloaded
  */
-function shouldDownloadFile(filename) {
+function shouldDownloadFile(filename, formats = allowedFormats) {
   if (!filename) return false;
   
   // Get the file extension without the dot
   const extension = path.extname(filename).toLowerCase().substring(1);
   
   // Check if the extension is in the allowed formats list
-  return allowedFormats.includes(extension);
+  return formats.includes(extension);
 }
 
 /**
@@ -306,6 +309,25 @@ async function processDownload(url, destination, jobId) {
       }
     }
     
+    // Get job-specific formats if available
+    let jobFormats = allowedFormats;
+    if (jobId) {
+      try {
+        const job = await queueManager.getItem(jobId);
+        if (job && job.formats) {
+          // Convert the formats object to an array of enabled formats
+          jobFormats = Object.entries(job.formats)
+            .filter(([_, enabled]) => enabled)
+            .map(([format]) => format.toLowerCase());
+          
+          console.log(`Using job-specific formats: ${jobFormats.join(', ')}`);
+          console.log(`Original formats object:`, JSON.stringify(job.formats));
+        }
+      } catch (error) {
+        console.error(`Error getting job formats: ${error.message}`);
+      }
+    }
+    
     // Extract identifier from URL if needed
     const identifier = extractIdentifier(url);
     
@@ -341,7 +363,7 @@ async function processDownload(url, destination, jobId) {
     // Get list of files
     const files = metadata.files || [];
     
-    // Filter files by format
+    // Filter files by format using job-specific formats
     const downloadableFiles = files.filter(file => {
       // Skip metadata files
       if (file.name.startsWith('_')) return false;
@@ -349,8 +371,8 @@ async function processDownload(url, destination, jobId) {
       // Get file extension
       const ext = path.extname(file.name).toLowerCase().substring(1);
       
-      // Check if it's in our allowed formats
-      return allowedFormats.includes(ext);
+      // Check if it's in our job-specific formats
+      return jobFormats.includes(ext);
     });
     
     if (downloadableFiles.length === 0) {

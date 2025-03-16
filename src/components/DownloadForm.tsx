@@ -137,7 +137,10 @@ export default function DownloadForm({ onDownloadAdded }: DownloadFormProps) {
       
       const formValues = watch();
       
-      const response = await fetch("/api/download/batch", {
+      // Log the formats being sent to the server
+      console.log("Sending batch formats to server:", formValues.formats);
+      
+      const response = await fetch("/api/queue/batch", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -181,8 +184,11 @@ export default function DownloadForm({ onDownloadAdded }: DownloadFormProps) {
     try {
       setIsSubmitting(true);
       
+      // Log the formats being sent to the server
+      console.log("Sending formats to server:", data.formats);
+      
       // Submit to API
-      const response = await fetch("/api/download", {
+      const response = await fetch("/api/queue", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

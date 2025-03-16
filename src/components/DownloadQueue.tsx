@@ -56,26 +56,40 @@ export default function DownloadQueue({ initialItems = [] }: DownloadQueueProps)
   const fetchQueue = async () => {
     try {
       setIsLoading(true);
-      const response = await fetch("/api/download");
+      // Fetch both queue and stats in parallel for efficiency
+      const [queueResponse, statsResponse] = await Promise.all([
+        fetch("/api/queue"),
+        fetch("/api/queue/stats")
+      ]);
       
-      if (!response.ok) {
-        throw new Error("Failed to fetch queue");
+      if (!queueResponse.ok || !statsResponse.ok) {
+        throw new Error("Failed to fetch queue data");
       }
       
-      const data = await response.json();
-      setQueue(data.queue || []);
-      setStats(data.stats || null);
+      const queueData = await queueResponse.json();
+      const statsData = await statsResponse.json();
+      
+      setQueue(queueData.queue || []);
+      setStats(statsData.stats || null);
     } catch (error) {
       console.error("Error fetching queue:", error);
+      // Don't set isLoading to false on error if we already have queue items
+      // This prevents flickering when there are temporary network issues
+      if (queue.length === 0) {
+        setIsLoading(false);
+      }
     } finally {
-      setIsLoading(false);
+      // Only set loading to false on success or if queue is empty
+      if (isLoading) {
+        setIsLoading(false);
+      }
     }
   };
 
   // Fetch queue pause status
   const fetchQueueStatus = async () => {
     try {
-      const response = await fetch("/api/download/pause");
+      const response = await fetch("/api/queue/status");
       
       if (!response.ok) {
         throw new Error("Failed to fetch queue status");
@@ -89,16 +103,25 @@ export default function DownloadQueue({ initialItems = [] }: DownloadQueueProps)
   };
 
   useEffect(() => {
+    // Initial fetch
     fetchQueue();
     fetchQueueStatus();
     
-    // Poll for updates every 3 seconds
-    const interval = setInterval(() => {
+    // Set up more frequent polling for active downloads
+    const pollInterval = setInterval(() => {
       fetchQueue();
-      fetchQueueStatus();
-    }, 3000);
+    }, 1000); // Poll every second for more responsive updates
     
-    return () => clearInterval(interval);
+    // Set up less frequent polling for queue status
+    const statusInterval = setInterval(() => {
+      fetchQueueStatus();
+    }, 5000); // Poll status every 5 seconds
+    
+    // Clean up intervals on unmount
+    return () => {
+      clearInterval(pollInterval);
+      clearInterval(statusInterval);
+    };
   }, []);
 
   // Add a new download to the queue
@@ -109,7 +132,7 @@ export default function DownloadQueue({ initialItems = [] }: DownloadQueueProps)
   // Remove an item from the queue
   const removeItem = async (id: string) => {
     try {
-      const response = await fetch(`/api/download/${id}`, {
+      const response = await fetch(`/api/queue/${id}`, {
         method: "DELETE",
       });
       
@@ -129,7 +152,7 @@ export default function DownloadQueue({ initialItems = [] }: DownloadQueueProps)
   // Stop a download
   const stopDownload = async (id: string) => {
     try {
-      const response = await fetch(`/api/download/${id}/stop`, {
+      const response = await fetch(`/api/queue/${id}/stop`, {
         method: "POST",
       });
       
@@ -149,12 +172,8 @@ export default function DownloadQueue({ initialItems = [] }: DownloadQueueProps)
   // Retry a failed download
   const retryDownload = async (id: string) => {
     try {
-      const response = await fetch(`/api/download/${id}`, {
+      const response = await fetch(`/api/queue/${id}/retry`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ action: "retry" }),
       });
       
       if (!response.ok) {
@@ -173,12 +192,8 @@ export default function DownloadQueue({ initialItems = [] }: DownloadQueueProps)
   // Prioritize a download
   const prioritizeDownload = async (id: string) => {
     try {
-      const response = await fetch(`/api/download/${id}`, {
+      const response = await fetch(`/api/queue/${id}/prioritize`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ action: "prioritize" }),
       });
       
       if (!response.ok) {
@@ -198,7 +213,7 @@ export default function DownloadQueue({ initialItems = [] }: DownloadQueueProps)
   const toggleQueuePause = async () => {
     try {
       setIsTogglingPause(true);
-      const response = await fetch("/api/download/pause", {
+      const response = await fetch("/api/queue/pause", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -224,7 +239,7 @@ export default function DownloadQueue({ initialItems = [] }: DownloadQueueProps)
   const clearQueue = async () => {
     try {
       setIsClearing(true);
-      const response = await fetch("/api/download/clear", {
+      const response = await fetch("/api/queue/clear", {
         method: "POST",
       });
       
