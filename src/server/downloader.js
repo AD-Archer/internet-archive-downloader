@@ -138,6 +138,7 @@ async function downloadWithWget(url, destination, jobId, fileIndex, totalFiles) 
     let downloadSpeed = '';
     let estimatedTimeRemaining = '';
     let overallProgress = 0;
+    let lastReportedProgress = -1; // Track last reported progress to reduce updates
     
     // Handle stdout (wget doesn't output much to stdout)
     wget.stdout.on('data', (data) => {
@@ -178,24 +179,29 @@ async function downloadWithWget(url, destination, jobId, fileIndex, totalFiles) 
         // Update job status
         if (jobId) {
           try {
-            await queueManager.updateItem(jobId, { 
-              status: 'downloading',
-              progress: overallProgress,
-              fileProgress: progress,
-              currentFile: fileName,
-              fileIndex: fileIndex,
-              totalFiles: totalFiles,
-              estimatedTime: estimatedTimeRemaining,
-              downloadSpeed: downloadSpeed
-            });
+            // Only update if progress has changed by at least 5%
+            if (Math.abs(overallProgress - lastReportedProgress) >= 5 || progress === 100) {
+              await queueManager.updateItem(jobId, { 
+                status: 'downloading',
+                progress: overallProgress,
+                fileProgress: progress,
+                currentFile: fileName,
+                fileIndex: fileIndex,
+                totalFiles: totalFiles,
+                estimatedTime: estimatedTimeRemaining,
+                downloadSpeed: downloadSpeed
+              });
+              
+              lastReportedProgress = overallProgress;
+              
+              // Log progress to console with more details
+              if (progress % 10 === 0 || progress === 100) {
+                console.log(`Downloading ${fileName} ${progressInfo}: ${progress}% (${downloadSpeed}, ETA: ${estimatedTimeRemaining})`);
+              }
+            }
           } catch (error) {
             console.error(`Error updating job status: ${error.message}`);
           }
-        }
-        
-        // Log progress to console with more details
-        if (downloadSpeed && estimatedTimeRemaining) {
-          console.log(`Downloading ${fileName} ${progressInfo}: ${progress}% (${downloadSpeed}, ETA: ${estimatedTimeRemaining})`);
         }
       }
     });

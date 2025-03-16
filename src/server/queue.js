@@ -121,8 +121,11 @@ class QueueManager {
     // In-memory cache of the queue
     this.queue = [];
     
-    // Flag to track if we're currently saving
-    this.isSaving = false;
+    // Track last save time to avoid reload loops
+    this.lastSaveTime = 0;
+    
+    // Flag to disable file watcher during our operations
+    this.disableWatcher = false;
     
     // Ensure the directory exists
     ensureDirectoryExists(this.queueFile);
@@ -185,8 +188,8 @@ class QueueManager {
       
       // Watch for changes to the queue file
       fs.watchFile(this.queueFile, { interval: 2000 }, (curr, prev) => {
-        // Skip if we're the ones who modified the file
-        if (this.isSaving) {
+        // Skip if watcher is disabled or if the file was modified by our own process recently
+        if (this.disableWatcher || Date.now() - this.lastSaveTime < 1000) {
           return;
         }
         
@@ -215,11 +218,15 @@ class QueueManager {
    */
   async loadQueue() {
     try {
+      // Disable watcher during load
+      this.disableWatcher = true;
+      
       // Acquire lock
       const lockAcquired = await this.lock.acquire();
       
       if (!lockAcquired) {
         console.warn('Could not acquire lock to load queue, using cached version');
+        this.disableWatcher = false;
         return this.queue;
       }
       
@@ -254,9 +261,13 @@ class QueueManager {
       } finally {
         // Release lock
         this.lock.release();
+        
+        // Re-enable watcher
+        this.disableWatcher = false;
       }
     } catch (error) {
       console.error('Error loading queue:', error);
+      this.disableWatcher = false;
     }
     
     return this.queue;
@@ -267,8 +278,9 @@ class QueueManager {
    */
   async saveQueue() {
     try {
-      // Set saving flag to prevent file watcher from reloading
-      this.isSaving = true;
+      // Update last save time and disable watcher
+      this.lastSaveTime = Date.now();
+      this.disableWatcher = true;
       
       // Acquire lock
       const lockAcquired = await this.lock.acquire();
@@ -277,7 +289,7 @@ class QueueManager {
         console.warn('Could not acquire lock to save queue, will retry later');
         // Schedule retry
         setTimeout(() => this.saveQueue(), 500);
-        this.isSaving = false;
+        this.disableWatcher = false;
         return;
       }
       
@@ -294,14 +306,14 @@ class QueueManager {
         // Release lock
         this.lock.release();
         
-        // Reset saving flag after a short delay to ensure file watcher doesn't trigger
+        // Re-enable watcher after a short delay
         setTimeout(() => {
-          this.isSaving = false;
+          this.disableWatcher = false;
         }, 100);
       }
     } catch (error) {
       console.error('Error saving queue:', error);
-      this.isSaving = false;
+      this.disableWatcher = false;
     }
   }
   
@@ -390,8 +402,13 @@ class QueueManager {
     
     this.queue[index] = { ...this.queue[index], ...updates };
     
-    // Save queue
-    this.saveThrottled();
+    // If this is a progress update, save immediately
+    // Otherwise use throttled save to reduce disk writes
+    if (updates.progress !== undefined) {
+      await this.saveQueue();
+    } else {
+      this.saveThrottled();
+    }
     
     return this.queue[index];
   }
