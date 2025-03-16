@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import axios from "axios";
 
-// Server configuration
-const SERVER_URL = process.env.DOWNLOADER_SERVER_URL || 'http://localhost:9124';
+// Server configuration - use environment variable or default to localhost
+const DOWNLOADER_URL = process.env.DOWNLOADER_URL || 'http://localhost:9124/api';
 
 // Mark this route as dynamic
 export const dynamic = 'force-dynamic';
@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
     }
     
     // Connect to the downloader server
-    await axios.post(`${SERVER_URL}/api/queue/pause`, { paused });
+    await axios.post(`${DOWNLOADER_URL}/queue/pause`, { paused });
     
     return NextResponse.json({ 
       success: true, 
@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
 export async function GET() {
   try {
     // Connect to the downloader server
-    const response = await axios.get(`${SERVER_URL}/api/queue/status`);
+    const response = await axios.get(`${DOWNLOADER_URL}/queue/status`);
     
     return NextResponse.json(response.data);
   } catch (error) {

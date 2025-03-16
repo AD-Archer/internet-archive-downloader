@@ -4,8 +4,8 @@ import path from "path";
 import os from "os";
 import { promises as fs } from "fs";
 
-// Server configuration
-const SERVER_URL = process.env.DOWNLOADER_SERVER_URL || 'http://localhost:9124';
+// Server configuration - use environment variable or default to localhost
+const DOWNLOADER_URL = process.env.DOWNLOADER_URL || 'http://localhost:9124/api';
 
 // Mark this route as dynamic
 export const dynamic = 'force-dynamic';
@@ -28,7 +28,7 @@ export async function DELETE(
     }
     
     // Connect to the downloader server
-    await axios.delete(`${SERVER_URL}/api/queue/${id}`);
+    await axios.delete(`${DOWNLOADER_URL}/queue/${id}`);
     return NextResponse.json({ success: true, message: "Item removed from queue" });
   } catch (error) {
     console.error("Error removing item from queue:", error);
@@ -62,11 +62,11 @@ export async function POST(
     
     if (action === "prioritize") {
       // Prioritize the download
-      await axios.post(`${SERVER_URL}/api/queue/${id}/prioritize`);
+      await axios.post(`${DOWNLOADER_URL}/queue/${id}/prioritize`);
       return NextResponse.json({ success: true, message: "Download prioritized" });
     } else if (action === "retry") {
       // Retry the download
-      await axios.post(`${SERVER_URL}/api/queue/${id}/retry`);
+      await axios.post(`${DOWNLOADER_URL}/queue/${id}/retry`);
       return NextResponse.json({ success: true, message: "Download queued for retry" });
     } else {
       return NextResponse.json(

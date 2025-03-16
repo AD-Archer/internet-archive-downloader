@@ -1,27 +1,20 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Force Next.js to use SWC for compilation even when Babel config is present
-  swcMinify: true,
-  compiler: {
-    // Enable all SWC compiler features
-    styledComponents: false,
-  },
-  // Other Next.js config options
+  // Enable both App Router and Pages Router
   reactStrictMode: true,
-  eslint: {
-    // Enable strict mode for ESLint
-    ignoreDuringBuilds: false,
+  
+  // Environment variables to expose to the browser
+  env: {
+    DOWNLOADER_URL: process.env.DOWNLOADER_URL || 'http://localhost:9124/api',
   },
-  // Set custom port for development server
-  experimental: {
-    serverComponentsExternalPackages: [],
-  },
-  // API routes proxy configuration
+  
+  // API routes configuration
   async rewrites() {
     return [
+      // Rewrite API requests to the App Router API
       {
         source: '/api/:path*',
-        destination: 'http://localhost:9124/api/:path*', // Proxy to backend server
+        destination: '/app/api/:path*',
       },
     ];
   },

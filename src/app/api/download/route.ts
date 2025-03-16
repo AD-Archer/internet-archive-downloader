@@ -48,8 +48,8 @@ const downloadSchema = z.object({
 // Path to the downloader script
 const downloaderPath = path.join(process.cwd(), 'src', 'server', 'downloader.js');
 
-// Server configuration
-const SERVER_URL = process.env.DOWNLOADER_SERVER_URL || 'http://localhost:9124';
+// Server configuration - use environment variable or default to localhost
+const DOWNLOADER_URL = process.env.DOWNLOADER_URL || 'http://localhost:9124/api';
 
 // Helper function to extract file details from Internet Archive URL
 async function getArchiveDetails(url: string) {
@@ -143,7 +143,7 @@ function startDownloader(job: DownloadJob) {
 async function getQueue(): Promise<DownloadJob[]> {
   try {
     // Connect to the downloader server
-    const response = await axios.get(`${SERVER_URL}/api/queue`);
+    const response = await axios.get(`${DOWNLOADER_URL}/queue`);
     return response.data.queue || [];
   } catch (error) {
     console.error("Error connecting to downloader server:", error);
@@ -155,7 +155,7 @@ async function getQueue(): Promise<DownloadJob[]> {
 async function getQueueStats() {
   try {
     // Connect to the downloader server
-    const response = await axios.get(`${SERVER_URL}/api/queue/stats`);
+    const response = await axios.get(`${DOWNLOADER_URL}/queue/stats`);
     return response.data.stats || {};
   } catch (error) {
     console.error("Error connecting to downloader server:", error);
@@ -167,7 +167,7 @@ async function getQueueStats() {
 async function addToQueue(job: Partial<DownloadJob>): Promise<DownloadJob> {
   try {
     // Connect to the downloader server
-    const response = await axios.post(`${SERVER_URL}/api/queue`, {
+    const response = await axios.post(`${DOWNLOADER_URL}/queue`, {
       url: job.url,
       destination: job.destination,
       formats: job.formats,
@@ -184,7 +184,7 @@ async function addToQueue(job: Partial<DownloadJob>): Promise<DownloadJob> {
 // Function to search Internet Archive
 async function searchArchive(query: string) {
   try {
-    const response = await axios.get(`${SERVER_URL}/api/search`, {
+    const response = await axios.get(`${DOWNLOADER_URL}/search`, {
       params: { query }
     });
     return response.data.results || [];
@@ -197,7 +197,7 @@ async function searchArchive(query: string) {
 // Function to get metadata for an Internet Archive item
 async function getArchiveMetadata(identifier: string) {
   try {
-    const response = await axios.get(`${SERVER_URL}/api/metadata/${identifier}`);
+    const response = await axios.get(`${DOWNLOADER_URL}/metadata/${identifier}`);
     return response.data.metadata || {};
   } catch (error) {
     console.error("Error fetching metadata:", error);

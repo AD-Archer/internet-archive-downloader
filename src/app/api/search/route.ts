@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import axios from "axios";
 
-// Server configuration
-const SERVER_URL = process.env.DOWNLOADER_SERVER_URL || 'http://localhost:9124';
+// Server configuration - use environment variable or default to localhost
+const DOWNLOADER_URL = process.env.DOWNLOADER_URL || 'http://localhost:9124/api';
 
 // Mark this route as dynamic to handle search parameters
 export const dynamic = 'force-dynamic';
@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
     }
     
     // Connect to the downloader server
-    const response = await axios.get(`${SERVER_URL}/api/search`, {
+    const response = await axios.get(`${DOWNLOADER_URL}/search`, {
       params: { query }
     });
     

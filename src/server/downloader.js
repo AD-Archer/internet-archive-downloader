@@ -22,7 +22,7 @@ program
   .option('-i, --identifier <id>', 'Internet Archive identifier (alternative to URL)')
   .option('-q, --queue <file>', 'Path to queue file')
   .option('-b, --browser', 'Enable browser download mode for testing')
-  .option('-p, --port <number>', 'Port for browser download server', '3001')
+  .option('-p, --port <number>', 'Port for browser download server', '9124')
   .option('-f, --formats <formats>', 'Comma-separated list of file formats to download', 'mp4,mov,mkv')
   .option('-s, --search <query>', 'Search Internet Archive and download all results')
   .option('-n, --notifications', 'Enable notifications for download events')
@@ -189,7 +189,8 @@ async function downloadWithWget(url, destination, jobId, fileIndex, totalFiles) 
                 fileIndex: fileIndex,
                 totalFiles: totalFiles,
                 estimatedTime: estimatedTimeRemaining,
-                downloadSpeed: downloadSpeed
+                downloadSpeed: downloadSpeed,
+                message: `Downloading ${fileName} (${progress}%)`
               });
               
               lastReportedProgress = overallProgress;
@@ -221,12 +222,14 @@ async function downloadWithWget(url, destination, jobId, fileIndex, totalFiles) 
                 progress: 100,
                 fileProgress: 100,
                 estimatedTime: null,
-                completedAt: new Date().toISOString()
+                completedAt: new Date().toISOString(),
+                message: 'Download completed successfully'
               });
             } else {
               // Otherwise just update the file progress
               await queueManager.updateItem(jobId, { 
-                fileProgress: 100
+                fileProgress: 100,
+                message: `Completed file ${fileIndex}/${totalFiles}: ${fileName}`
               });
             }
           } catch (error) {
@@ -243,7 +246,8 @@ async function downloadWithWget(url, destination, jobId, fileIndex, totalFiles) 
           try {
             await queueManager.updateItem(jobId, { 
               status: 'failed',
-              error: `Download failed with code ${code}`
+              error: `Download failed with code ${code}`,
+              message: `Download failed: ${fileName}`
             });
           } catch (error) {
             console.error(`Error updating job status: ${error.message}`);
@@ -301,7 +305,7 @@ async function processDownload(url, destination, jobId) {
     if (jobId) {
       try {
         await queueManager.updateItem(jobId, {
-          status: 'processing',
+          status: 'fetching_metadata',
           message: 'Fetching metadata...'
         });
       } catch (error) {
@@ -317,8 +321,13 @@ async function processDownload(url, destination, jobId) {
         if (job && job.formats) {
           // Convert the formats object to an array of enabled formats
           jobFormats = Object.entries(job.formats)
-            .filter(([_, enabled]) => enabled)
+            .filter(([_, enabled]) => enabled === true)
             .map(([format]) => format.toLowerCase());
+          
+          // If no formats are enabled, use default formats
+          if (jobFormats.length === 0) {
+            jobFormats = allowedFormats;
+          }
           
           console.log(`Using job-specific formats: ${jobFormats.join(', ')}`);
           console.log(`Original formats object:`, JSON.stringify(job.formats));
@@ -842,18 +851,24 @@ function startBrowserServer(port) {
         return res.status(400).json({ error: 'URL is required' });
       }
       
+      // Default formats if none provided
+      const defaultFormats = {
+        mp4: true,
+        mov: true,
+        mkv: true
+      };
+      
       // Create job
       const job = {
         id: `job_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
         url,
         destination: destination || options.destination,
-        formats: formats || {
-          mp4: true,
-          mov: true,
-          mkv: true
-        },
+        formats: formats || defaultFormats,
         status: 'queued',
         progress: 0,
+        fileProgress: 0,
+        fileIndex: 0,
+        totalFiles: 0,
         priority: priority || 'normal', // Can be 'high', 'normal', 'low'
         createdAt: new Date().toISOString()
       };
@@ -883,28 +898,34 @@ function startBrowserServer(port) {
         return res.status(400).json({ error: 'Items array is required' });
       }
       
+      // Default formats if none provided
+      const defaultFormats = {
+        mp4: true,
+        mov: true,
+        mkv: true
+      };
+      
       const jobs = [];
       
       // Process each item
       for (const item of items) {
-        if (!item.url && !item.identifier) {
+        if (!item.identifier) {
           continue; // Skip invalid items
         }
         
-        const url = item.url || item.identifier;
+        const url = item.identifier;
         
         // Create job
         const job = {
           id: `job_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
           url,
           destination: destination || options.destination,
-          formats: formats || {
-            mp4: true,
-            mov: true,
-            mkv: true
-          },
+          formats: formats || defaultFormats,
           status: 'queued',
           progress: 0,
+          fileProgress: 0,
+          fileIndex: 0,
+          totalFiles: 0,
           priority: priority || 'normal',
           createdAt: new Date().toISOString()
         };
@@ -925,6 +946,14 @@ function startBrowserServer(port) {
       console.error('Error adding batch to queue:', error);
       res.status(500).json({ error: 'Failed to add batch downloads to queue' });
     }
+  });
+  
+  // GET endpoint to check if queue is paused
+  app.get('/api/queue/status', (req, res) => {
+    res.json({ 
+      paused: global.queuePaused === true,
+      processing: isProcessing
+    });
   });
   
   // POST endpoint to pause/resume the queue
@@ -949,14 +978,6 @@ function startBrowserServer(port) {
       console.error('Error pausing/resuming queue:', error);
       res.status(500).json({ error: 'Failed to pause/resume queue' });
     }
-  });
-  
-  // GET endpoint to check if queue is paused
-  app.get('/api/queue/status', (req, res) => {
-    res.json({ 
-      paused: global.queuePaused === true,
-      processing: isProcessing
-    });
   });
   
   // POST endpoint to retry a failed download

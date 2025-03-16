@@ -11,7 +11,7 @@ const { spawn } = require('child_process');
 // Path to the downloader script
 const downloaderPath = path.join(__dirname, 'downloader.js');
 
-// Custom port configuration
+// Custom port configuration - use 9124 by default to match frontend expectations
 const port = process.env.PORT || 9124;
 
 // Start the downloader in browser mode

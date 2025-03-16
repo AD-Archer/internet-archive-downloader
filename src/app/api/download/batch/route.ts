@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import axios from "axios";
 
-// Server configuration
-const SERVER_URL = process.env.DOWNLOADER_SERVER_URL || 'http://localhost:9124';
+// Server configuration - use environment variable or default to localhost
+const DOWNLOADER_URL = process.env.DOWNLOADER_URL || 'http://localhost:9124/api';
 
 // Mark this route as dynamic
 export const dynamic = 'force-dynamic';
@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
     const { items, destination, formats, priority } = result.data;
     
     // Add to queue
-    const response = await axios.post(`${SERVER_URL}/api/queue/batch`, {
+    const response = await axios.post(`${DOWNLOADER_URL}/queue/batch`, {
       items,
       destination,
       formats,
