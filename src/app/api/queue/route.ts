@@ -111,7 +111,7 @@ const writeQueue = async (data: { queue: QueueItem[] }): Promise<boolean> => {
 };
 
 // GET handler for retrieving queue
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     const queueData = await readQueue();
     
@@ -161,6 +161,18 @@ export async function POST(request: NextRequest) {
     const success = await writeQueue({ queue });
     
     if (success) {
+      // Trigger queue processing
+      try {
+        // Use fetch to make a non-blocking request to the process endpoint
+        const processUrl = new URL("/api/queue/process", request.url).toString();
+        fetch(processUrl).catch(error => {
+          console.error("Error triggering queue processing:", error);
+        });
+      } catch (error) {
+        console.error("Error triggering queue processing:", error);
+        // Continue anyway as the item is already in the queue
+      }
+      
       return NextResponse.json({ 
         success: true, 
         message: "Download added to queue",
@@ -182,7 +194,7 @@ export async function POST(request: NextRequest) {
 }
 
 // DELETE handler for clearing queue
-export async function DELETE(request: NextRequest) {
+export async function DELETE() {
   try {
     // Get current queue to check for active downloads
     const queueData = await readQueue();

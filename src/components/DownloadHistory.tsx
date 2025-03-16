@@ -15,8 +15,9 @@ export default function DownloadHistory() {
   const formatDate = useCallback((timestamp: string) => {
     try {
       return new Date(timestamp).toLocaleString();
-    } catch (error) {
-      console.error("Error formatting date:", error);
+    } catch {
+      console.error("Error fetching history");
+      setError("Failed to load history. Please try again.");
       return "Unknown date";
     }
   }, []);

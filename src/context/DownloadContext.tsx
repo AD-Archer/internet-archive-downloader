@@ -43,6 +43,8 @@ interface DownloadContextType {
   isClearing: boolean;
   isPaused: boolean;
   isTogglingPause: boolean;
+  isAdding: boolean;
+  error: string | null;
   completedDownloads: QueueItem[];
   addToQueue: (url: string, formats?: Record<string, boolean>, isPlaylist?: boolean) => Promise<void>;
   removeItem: (id: string) => Promise<void>;
@@ -61,6 +63,8 @@ const DownloadContext = createContext<DownloadContextType>({
   isClearing: false,
   isPaused: false,
   isTogglingPause: false,
+  isAdding: false,
+  error: null,
   completedDownloads: [],
   addToQueue: async () => {},
   removeItem: async () => {},
@@ -84,6 +88,8 @@ export function DownloadProvider({ children }: DownloadProviderProps) {
   const [isClearing, setIsClearing] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [isTogglingPause, setIsTogglingPause] = useState(false);
+  const [isAdding, setIsAdding] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [completedDownloads, setCompletedDownloads] = useState<QueueItem[]>([]);
   const [isUpdating, setIsUpdating] = useState(false); // Add state to track updates
   
@@ -446,9 +452,14 @@ export function DownloadProvider({ children }: DownloadProviderProps) {
       // Convert formats to fileTypes array for API
       const fileTypes = formats ? 
         Object.entries(formats)
-          .filter(([_, enabled]) => enabled)
+          .filter(([format, enabled]) => enabled && format !== 'all')
           .map(([format]) => format) : 
         [];
+      
+      // If no formats are selected, use a default
+      if (fileTypes.length === 0) {
+        fileTypes.push('mp4', 'mp3', 'pdf'); // Default formats
+      }
       
       // Optimistic update - add a temporary item to the queue
       const tempId = `temp-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
@@ -479,8 +490,13 @@ export function DownloadProvider({ children }: DownloadProviderProps) {
         // Update lastActivity to trigger more frequent polling
         setLastActivity(Date.now());
         
-        // No need to immediately fetch queue data - the polling will handle it
-        // and we've already added an optimistic item
+        // Trigger queue processing
+        try {
+          await axios.get(`${apiBaseUrl}/queue/process`);
+        } catch (processError) {
+          console.error('Error triggering queue processing:', processError);
+          // Don't show error to user, as the item is already in the queue
+        }
       } else {
         // Remove temporary item if failed
         setQueue(prev => prev.filter(item => item.id !== tempId));
@@ -706,6 +722,8 @@ export function DownloadProvider({ children }: DownloadProviderProps) {
         isClearing,
         isPaused,
         isTogglingPause,
+        isAdding,
+        error,
         completedDownloads,
         addToQueue,
         removeItem,

@@ -8,6 +8,21 @@ import path from 'path';
 // Path to queue data file
 const queueFilePath = path.join(process.cwd(), "data", "queue.json");
 
+interface QueueItem {
+  id: string;
+  url: string;
+  downloadPath: string;
+  fileTypes: string[];
+  isPlaylist: boolean;
+  status: "queued" | "downloading" | "completed" | "failed" | "canceled";
+  progress: number;
+  filesCompleted: number;
+  totalFiles: number;
+  timestamp: string;
+  message?: string;
+  processId?: number;
+}
+
 /**
  * Attempts to fix corrupted JSON data
  * @param data The potentially corrupted JSON string
@@ -96,8 +111,8 @@ export const checkAndRepairQueueFile = async (): Promise<boolean> => {
       
       return true;
     }
-  } catch (error) {
-    console.error("Error checking/repairing queue file:", error);
+  } catch {
+    console.error("Error repairing queue data");
     return false;
   }
 }; 

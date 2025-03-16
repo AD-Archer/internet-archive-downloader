@@ -106,8 +106,8 @@ export default function DownloadQueue() {
   const handleRemoveItem = useCallback((id: string) => {
     try {
       removeItem(id);
-    } catch (err) {
-      console.error("Error removing item:", err);
+    } catch {
+      console.error("Error removing item");
       setError("Failed to remove item. Please try again.");
     }
   }, [removeItem]);
@@ -430,4 +430,6 @@ const QueueItemComponent = memo(({
       </div>
     </div>
   );
-}); 
+});
+
+QueueItemComponent.displayName = "QueueItemComponent"; 

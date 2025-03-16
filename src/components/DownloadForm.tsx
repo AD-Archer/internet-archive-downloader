@@ -12,7 +12,11 @@ import { useDownload } from '@/context/DownloadContext';
 export default function DownloadForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { addToQueue, isLoading } = useDownload();
+  const {
+    addToQueue,
+    isAdding,
+    error
+  } = useDownload();
   
   // Form state
   const [url, setUrl] = useState('');
@@ -56,6 +60,14 @@ export default function DownloadForm() {
       // Validate URL format
       if (!url.includes('archive.org')) {
         toast.error('URL must be from archive.org');
+        setIsSubmitting(false);
+        return;
+      }
+      
+      // Check if at least one format is selected
+      const hasSelectedFormat = Object.values(formats).some(value => value === true);
+      if (!hasSelectedFormat) {
+        toast.error('Please select at least one format');
         setIsSubmitting(false);
         return;
       }
@@ -109,8 +121,23 @@ export default function DownloadForm() {
   
   // Handle format change
   const handleFormatChange = (format: string, checked: boolean) => {
+    if (format === 'all') {
+      // If "all" is checked/unchecked, update all formats
+      handleToggleAll(checked);
+      return;
+    }
+    
     setFormats(prev => {
       const newFormats = { ...prev, [format]: checked };
+      
+      // Ensure at least one format is selected
+      const hasAnyFormat = Object.entries(newFormats)
+        .some(([key, value]) => key !== 'all' && value);
+      
+      if (!hasAnyFormat) {
+        // If no formats are selected, keep the current one selected
+        return { ...prev };
+      }
       
       // Update "all" checkbox based on other selections
       const allSelected = 
@@ -198,7 +225,7 @@ export default function DownloadForm() {
                     name="format-all"
                     type="checkbox"
                     checked={formats.all}
-                    onChange={(e) => handleToggleAll(e.target.checked)}
+                    onChange={(e) => handleFormatChange('all', e.target.checked)}
                     className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700"
                   />
                   <label htmlFor="format-all" className="ml-2 text-sm text-gray-700 dark:text-gray-300">

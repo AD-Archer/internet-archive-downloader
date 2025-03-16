@@ -2,9 +2,24 @@ import { NextRequest, NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
 import { promisify } from "util";
+import { exec } from "child_process";
 
 // Path to the history file
 const HISTORY_FILE = path.join(process.cwd(), "data", "history.json");
+
+// Convert exec to Promise-based
+const execAsync = promisify(exec);
+
+// History item type definition
+interface HistoryItem {
+  id: string;
+  url: string;
+  status: "queued" | "downloading" | "completed" | "failed" | "canceled";
+  timestamp: string;
+  completedAt: string;
+  fileCount: number;
+  downloadPath: string;
+}
 
 // Ensure the data directory exists
 const ensureDataDir = async () => {

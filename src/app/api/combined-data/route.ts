@@ -220,7 +220,7 @@ const calculateStats = (queueItems: QueueItem[]) => {
  * GET handler for retrieving combined data
  * This endpoint combines queue, history, and status data to reduce API calls
  */
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     const now = Date.now();
     const cacheAge = now - lastCacheTime;

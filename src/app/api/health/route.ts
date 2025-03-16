@@ -6,7 +6,7 @@ import path from "path";
  * Health check endpoint to verify the server is running properly
  * GET /api/health
  */
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     // Check if data directory exists
     const dataDir = path.join(process.cwd(), "data");

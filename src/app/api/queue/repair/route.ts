@@ -5,6 +5,21 @@ import path from "path";
 // Path to queue data file
 const queueFilePath = path.join(process.cwd(), "data", "queue.json");
 
+interface QueueItem {
+  id: string;
+  url: string;
+  downloadPath: string;
+  fileTypes: string[];
+  isPlaylist: boolean;
+  status: "queued" | "downloading" | "completed" | "failed" | "canceled";
+  progress: number;
+  filesCompleted: number;
+  totalFiles: number;
+  timestamp: string;
+  message?: string;
+  processId?: number;
+}
+
 /**
  * Attempts to fix corrupted JSON data
  * @param data The potentially corrupted JSON string
@@ -52,7 +67,7 @@ const fixCorruptedJson = (data: string): { queue: any[] } => {
  * Repair queue file API endpoint
  * GET /api/queue/repair
  */
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     // Check if queue file exists
     if (!fs.existsSync(queueFilePath)) {
@@ -97,7 +112,7 @@ export async function GET(request: NextRequest) {
  * Reset queue file API endpoint
  * POST /api/queue/repair
  */
-export async function POST(request: NextRequest) {
+export async function POST() {
   try {
     // Create data directory if it doesn't exist
     const dataDir = path.dirname(queueFilePath);

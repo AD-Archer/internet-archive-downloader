@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { checkAndRepairQueueFile } from "@/utils/queueRepair";
 
 // This endpoint is called on application startup to perform maintenance tasks
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     // Check and repair queue file if needed
     const wasRepaired = await checkAndRepairQueueFile();

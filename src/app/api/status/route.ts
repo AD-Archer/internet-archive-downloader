@@ -154,7 +154,7 @@ const calculateStats = (queueItems: QueueItem[]) => {
 /**
  * GET handler for retrieving status
  */
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     // Read queue and status data
     const [queueData, statusData] = await Promise.all([

@@ -3,7 +3,6 @@ import { exec } from "child_process";
 import { promisify } from "util";
 import path from "path";
 import fs from "fs";
-import axios from "axios";
 
 // Convert exec to Promise-based
 const execAsync = promisify(exec);
@@ -459,11 +458,11 @@ export async function POST(request: NextRequest) {
       message: `Download added to queue. ${activeDownloads.length > 0 ? 'Will start after current downloads complete.' : 'Starting download...'}`,
       queueId: queueResult.id
     });
-  } catch (error) {
-    console.error("Server error:", error);
+  } catch {
+    console.error("Error processing download");
     return NextResponse.json({ 
       success: false, 
-      message: "Server error" 
+      message: "Failed to process download" 
     }, { status: 500 });
   }
 } 
