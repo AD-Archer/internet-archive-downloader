@@ -315,7 +315,7 @@ function startBrowserServer(port) {
   // POST endpoint to add download to queue
   app.post('/api/queue', async (req, res) => {
     try {
-      const { url, destination } = req.body;
+      const { url, destination, formats } = req.body;
       
       if (!url) {
         return res.status(400).json({ error: 'URL is required' });
@@ -323,9 +323,14 @@ function startBrowserServer(port) {
       
       // Create job
       const job = {
-        id: Date.now().toString(),
+        id: `job_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
         url,
         destination: destination || options.destination,
+        formats: formats || {
+          mp4: true,
+          mov: true,
+          mkv: true
+        },
         status: 'queued',
         progress: 0,
         createdAt: new Date().toISOString()
@@ -347,12 +352,193 @@ function startBrowserServer(port) {
     }
   });
   
+  // DELETE endpoint to remove an item from the queue
+  app.delete('/api/queue/:id', (req, res) => {
+    try {
+      const { id } = req.params;
+      
+      if (!id) {
+        return res.status(400).json({ error: 'Item ID is required' });
+      }
+      
+      // Get the item first to check if it's currently downloading
+      const item = queueManager.getItem(id);
+      
+      if (!item) {
+        return res.status(404).json({ error: 'Item not found in queue' });
+      }
+      
+      // If the item is currently downloading, try to stop it first
+      if (item.status === 'downloading') {
+        // This is a best-effort approach and may not work in all cases
+        try {
+          // On macOS/Linux, use ps and grep to find wget processes
+          const { execSync } = require('child_process');
+          const psOutput = execSync('ps aux').toString();
+          
+          // Look for wget processes with the item's URL
+          const lines = psOutput.split('\n').filter(line => 
+            line.includes('wget') && line.includes(item.url)
+          );
+          
+          // Extract PIDs and kill them
+          lines.forEach(line => {
+            const parts = line.trim().split(/\s+/);
+            if (parts.length > 1) {
+              const pid = parts[1];
+              try {
+                execSync(`kill ${pid}`);
+                console.log(`Killed process ${pid} for download ${id}`);
+              } catch (killError) {
+                console.error(`Failed to kill process ${pid}:`, killError);
+              }
+            }
+          });
+        } catch (processError) {
+          console.error("Error trying to kill wget processes:", processError);
+        }
+      }
+      
+      // Remove the item from the queue
+      const success = queueManager.removeItem(id);
+      
+      if (success) {
+        res.json({ success: true, message: 'Item removed from queue' });
+      } else {
+        res.status(404).json({ error: 'Item not found in queue' });
+      }
+    } catch (error) {
+      console.error('Error removing item from queue:', error);
+      res.status(500).json({ error: 'Failed to remove item from queue' });
+    }
+  });
+  
+  // POST endpoint to stop a download
+  app.post('/api/queue/:id/stop', (req, res) => {
+    try {
+      const { id } = req.params;
+      
+      if (!id) {
+        return res.status(400).json({ error: 'Item ID is required' });
+      }
+      
+      // Get the item
+      const item = queueManager.getItem(id);
+      
+      if (!item) {
+        return res.status(404).json({ error: 'Item not found in queue' });
+      }
+      
+      // If the item is currently downloading, try to stop it
+      if (item.status === 'downloading') {
+        // This is a best-effort approach and may not work in all cases
+        try {
+          // On macOS/Linux, use ps and grep to find wget processes
+          const { execSync } = require('child_process');
+          const psOutput = execSync('ps aux').toString();
+          
+          // Look for wget processes with the item's URL
+          const lines = psOutput.split('\n').filter(line => 
+            line.includes('wget') && line.includes(item.url)
+          );
+          
+          // Extract PIDs and kill them
+          lines.forEach(line => {
+            const parts = line.trim().split(/\s+/);
+            if (parts.length > 1) {
+              const pid = parts[1];
+              try {
+                execSync(`kill ${pid}`);
+                console.log(`Killed process ${pid} for download ${id}`);
+              } catch (killError) {
+                console.error(`Failed to kill process ${pid}:`, killError);
+              }
+            }
+          });
+        } catch (processError) {
+          console.error("Error trying to kill wget processes:", processError);
+        }
+        
+        // Update the item status
+        queueManager.updateItem(id, {
+          status: 'failed',
+          error: 'Download stopped by user'
+        });
+        
+        res.json({ success: true, message: 'Download stopped' });
+      } else {
+        // If not downloading, just update the status
+        queueManager.updateItem(id, {
+          status: 'failed',
+          error: 'Download stopped by user'
+        });
+        
+        res.json({ success: true, message: 'Download marked as stopped' });
+      }
+    } catch (error) {
+      console.error('Error stopping download:', error);
+      res.status(500).json({ error: 'Failed to stop download' });
+    }
+  });
+  
+  // POST endpoint to clear the entire queue
+  app.post('/api/queue/clear', (req, res) => {
+    try {
+      // Get all items
+      const items = queueManager.getItems();
+      
+      // Try to stop any active downloads
+      items.forEach(item => {
+        if (item.status === 'downloading') {
+          try {
+            // On macOS/Linux, use ps and grep to find wget processes
+            const { execSync } = require('child_process');
+            const psOutput = execSync('ps aux').toString();
+            
+            // Look for wget processes with the item's URL
+            const lines = psOutput.split('\n').filter(line => 
+              line.includes('wget') && line.includes(item.url)
+            );
+            
+            // Extract PIDs and kill them
+            lines.forEach(line => {
+              const parts = line.trim().split(/\s+/);
+              if (parts.length > 1) {
+                const pid = parts[1];
+                try {
+                  execSync(`kill ${pid}`);
+                  console.log(`Killed process ${pid} for download ${item.id}`);
+                } catch (killError) {
+                  console.error(`Failed to kill process ${pid}:`, killError);
+                }
+              }
+            });
+          } catch (processError) {
+            console.error("Error trying to kill wget processes:", processError);
+          }
+        }
+      });
+      
+      // Clear the queue
+      queueManager.queue = [];
+      queueManager.saveQueue();
+      
+      res.json({ success: true, message: 'Queue cleared' });
+    } catch (error) {
+      console.error('Error clearing queue:', error);
+      res.status(500).json({ error: 'Failed to clear queue' });
+    }
+  });
+  
   // Start server
   app.listen(port, () => {
     console.log(`Browser download server running at http://localhost:${port}`);
     console.log(`API endpoints:`);
     console.log(`- GET /api/queue - Get current queue`);
     console.log(`- POST /api/queue - Add download to queue`);
+    console.log(`- DELETE /api/queue/:id - Remove item from queue`);
+    console.log(`- POST /api/queue/:id/stop - Stop a download`);
+    console.log(`- POST /api/queue/clear - Clear the entire queue`);
   });
 }
 

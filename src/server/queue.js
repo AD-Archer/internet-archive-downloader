@@ -113,6 +113,15 @@ class QueueManager {
   }
   
   /**
+   * Get item by ID
+   * @param {string} id - Item ID
+   * @returns {QueueItem|null} Item or null
+   */
+  getItem(id) {
+    return this.queue.find(item => item.id === id);
+  }
+  
+  /**
    * Update item in queue
    * @param {string} id - Item ID
    * @param {Partial<QueueItem>} updates - Updates to apply
@@ -147,13 +156,6 @@ class QueueManager {
     this.saveQueue();
     
     return true;
-  }
-
-  /**
-   * Get item by ID
-   */
-  getItem(id) {
-    return this.queue.find(item => item.id === id);
   }
 }
 

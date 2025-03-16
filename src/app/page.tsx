@@ -3,15 +3,18 @@
 import { useState } from "react";
 import DownloadForm from "@/components/DownloadForm";
 import DownloadQueue from "@/components/DownloadQueue";
+import { Toaster } from "react-hot-toast";
 
 // Download queue item type
 interface QueueItem {
   id: string;
   url: string;
   destination: string;
+  formats?: Record<string, boolean>;
   status: "queued" | "downloading" | "completed" | "failed";
   progress: number;
   estimatedTime?: string;
+  error?: string;
 }
 
 /**
@@ -26,11 +29,12 @@ export default function Home() {
       id: download.id,
       url: download.url,
       destination: download.destination,
+      formats: download.formats,
       status: download.status,
       progress: 0,
     };
     
-    setQueueItems((prev) => [...prev, newItem]);
+    setQueueItems((prev) => [newItem, ...prev]);
   };
 
   return (
@@ -50,6 +54,9 @@ export default function Home() {
         
         {/* Download queue */}
         <DownloadQueue initialItems={queueItems} />
+        
+        {/* Toast notifications */}
+        <Toaster position="bottom-right" />
       </div>
     </main>
   );
