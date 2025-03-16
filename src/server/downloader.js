@@ -22,6 +22,7 @@ program
   .option('-q, --queue <file>', 'Path to queue file')
   .option('-b, --browser', 'Enable browser download mode for testing')
   .option('-p, --port <number>', 'Port for browser download server', '3001')
+  .option('-f, --formats <formats>', 'Comma-separated list of file formats to download', 'mp4,mov,mkv')
   .parse(process.argv);
 
 const options = program.opts();
@@ -31,6 +32,9 @@ const queueManager = new QueueManager(options.queue);
 
 // Flag to track if download process is running
 let isProcessing = false;
+
+// Parse formats into an array
+const allowedFormats = options.formats ? options.formats.split(',').map(f => f.trim().toLowerCase()) : ['mp4', 'mov', 'mkv'];
 
 /**
  * Parse Internet Archive URL to extract identifier
@@ -98,21 +102,17 @@ async function downloadWithWget(url, destination, jobId) {
     wget.stderr.on('data', (data) => {
       const output = data.toString();
       
-      // Parse wget output to get progress percentage
-      if (output.includes('%')) {
-        const percentMatch = output.match(/(\d+)%/);
-        if (percentMatch && percentMatch[1]) {
-          const progress = parseInt(percentMatch[1], 10);
-          console.log(`Download progress: ${progress}%`);
-          
-          // Update job progress
-          if (jobId) {
-            const estimatedTime = output.match(/(\d+[hms])/);
-            queueManager.updateItem(jobId, { 
-              progress,
-              estimatedTime: estimatedTime ? estimatedTime[1] : undefined
-            });
-          }
+      // Parse wget output to get progress
+      const progressMatch = output.match(/(\d+)%/);
+      if (progressMatch && progressMatch[1]) {
+        const progress = parseInt(progressMatch[1]);
+        
+        // Update job status
+        if (jobId) {
+          queueManager.updateItem(jobId, { 
+            status: 'downloading',
+            progress
+          });
         }
       }
     });
@@ -130,20 +130,19 @@ async function downloadWithWget(url, destination, jobId) {
           });
         }
         
-        resolve();
+        resolve(destination);
       } else {
-        const error = new Error(`wget exited with code ${code}`);
-        console.error(error.message);
+        console.error(`Download failed with code ${code}`);
         
         // Update job status
         if (jobId) {
           queueManager.updateItem(jobId, { 
             status: 'failed',
-            error: `wget exited with code ${code}`
+            error: `Download failed with code ${code}`
           });
         }
         
-        reject(error);
+        reject(new Error(`Download failed with code ${code}`));
       }
     });
     
@@ -165,6 +164,19 @@ async function downloadWithWget(url, destination, jobId) {
 }
 
 /**
+ * Check if a file should be downloaded based on its extension
+ */
+function shouldDownloadFile(filename) {
+  if (!filename) return false;
+  
+  // Get the file extension without the dot
+  const extension = path.extname(filename).toLowerCase().substring(1);
+  
+  // Check if the extension is in the allowed formats list
+  return allowedFormats.includes(extension);
+}
+
+/**
  * Process a download from Internet Archive
  */
 async function processDownload(url, destination, jobId) {
@@ -179,6 +191,7 @@ async function processDownload(url, destination, jobId) {
     }
     
     console.log(`Processing download for identifier: ${identifier}`);
+    console.log(`Filtering for formats: ${allowedFormats.join(', ')}`);
     
     // Get metadata
     const metadata = await getArchiveMetadata(identifier);
@@ -187,14 +200,18 @@ async function processDownload(url, destination, jobId) {
       throw new Error(`No files found for ${identifier}`);
     }
     
-    // Find downloadable files
+    // Find downloadable files that match the allowed formats
     const downloadableFiles = metadata.files.filter(file => 
-      file.source === 'original' && !file.name.endsWith('_meta.xml')
+      file.source === 'original' && 
+      !file.name.endsWith('_meta.xml') &&
+      shouldDownloadFile(file.name)
     );
     
     if (downloadableFiles.length === 0) {
-      throw new Error(`No downloadable files found for ${identifier}`);
+      throw new Error(`No files matching the selected formats found for ${identifier}`);
     }
+    
+    console.log(`Found ${downloadableFiles.length} files matching the selected formats`);
     
     // Create destination directory
     const itemDir = path.join(destination, identifier);

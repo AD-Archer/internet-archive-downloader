@@ -11,6 +11,7 @@ interface DownloadJob {
   id: string;
   url: string;
   destination: string;
+  formats: Record<string, boolean>;
   status: "queued" | "downloading" | "completed" | "failed";
   progress: number;
   estimatedTime?: string;
@@ -22,6 +23,11 @@ interface DownloadJob {
 const downloadSchema = z.object({
   url: z.string().url(),
   destination: z.string().optional(),
+  formats: z.record(z.boolean()).optional().default({
+    mp4: true,
+    mov: true,
+    mkv: true,
+  }),
 });
 
 // Path to the downloader script
@@ -92,11 +98,18 @@ function startDownloader(job: DownloadJob) {
   // Default destination if not provided
   const destination = job.destination || path.join(os.homedir(), 'Downloads', 'internet-archive');
   
+  // Convert formats object to comma-separated string of enabled formats
+  const enabledFormats = Object.entries(job.formats || {})
+    .filter(([_, enabled]) => enabled)
+    .map(([format]) => format)
+    .join(',');
+  
   // Start the downloader process
   const process = spawn('node', [
     downloaderPath,
     '--url', job.url,
-    '--destination', destination
+    '--destination', destination,
+    '--formats', enabledFormats
   ], {
     detached: true,
     stdio: 'ignore'
@@ -152,47 +165,51 @@ async function addToQueue(job: DownloadJob): Promise<DownloadJob> {
 // POST handler for new download requests
 export async function POST(request: NextRequest) {
   try {
+    // Parse request body
     const body = await request.json();
     
-    // Validate request body
+    // Validate request
     const result = downloadSchema.safeParse(body);
+    
     if (!result.success) {
       return NextResponse.json(
-        { error: "Invalid request data", details: result.error.format() },
+        { error: "Invalid request", details: result.error.format() },
         { status: 400 }
       );
     }
     
-    const { url, destination } = result.data;
+    // Get URL and destination from validated data
+    const { url, destination, formats } = result.data;
     
     // Get archive details
     const details = await getArchiveDetails(url);
     
-    // Create download job
+    // Generate a unique ID for the job
+    const id = `job_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    
+    // Create job object
     const job: DownloadJob = {
-      id: Date.now().toString(),
+      id,
       url,
       destination: destination || path.join(os.homedir(), 'Downloads', 'internet-archive'),
+      formats,
       status: "queued",
       progress: 0,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
     };
     
     // Add to queue
-    const addedJob = await addToQueue(job);
+    await addToQueue(job);
     
-    // Return job details
-    return NextResponse.json({
-      message: "Download added to queue",
-      job: {
-        ...addedJob,
-        details
-      }
-    });
+    // Start the downloader process
+    startDownloader(job);
+    
+    return NextResponse.json({ success: true, job, details });
   } catch (error) {
     console.error("Error processing download request:", error);
+    
     return NextResponse.json(
-      { error: "Failed to process download request" },
+      { error: error instanceof Error ? error.message : "Unknown error" },
       { status: 500 }
     );
   }

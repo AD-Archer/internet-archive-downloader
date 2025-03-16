@@ -7,9 +7,11 @@ interface QueueItem {
   id: string;
   url: string;
   destination: string;
+  formats?: Record<string, boolean>;
   status: "queued" | "downloading" | "completed" | "failed";
   progress: number;
   estimatedTime?: string;
+  error?: string;
 }
 
 // Props for the component
@@ -52,19 +54,24 @@ export default function DownloadQueue({ initialItems = [] }: DownloadQueueProps)
     return () => clearInterval(interval);
   }, []);
 
-  // Get status badge color
+  // Add a new download to the queue
+  const addDownload = (download: QueueItem) => {
+    setQueue(prev => [download, ...prev]);
+  };
+
+  // Get status color for display
   const getStatusColor = (status: QueueItem["status"]) => {
     switch (status) {
       case "queued":
-        return "bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-300 dark:border-yellow-800";
+        return "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300";
       case "downloading":
-        return "bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800";
+        return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300";
       case "completed":
-        return "bg-green-100 text-green-800 border-green-200 dark:bg-green-900/30 dark:text-green-300 dark:border-green-800";
+        return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300";
       case "failed":
-        return "bg-red-100 text-red-800 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800";
+        return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300";
       default:
-        return "bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:border-gray-600";
+        return "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300";
     }
   };
 
@@ -72,14 +79,43 @@ export default function DownloadQueue({ initialItems = [] }: DownloadQueueProps)
   const getProgressColor = (status: QueueItem["status"]) => {
     switch (status) {
       case "downloading":
-        return "bg-blue-600 dark:bg-blue-500";
+        return "bg-blue-500";
       case "completed":
-        return "bg-green-600 dark:bg-green-500";
+        return "bg-green-500";
       case "failed":
-        return "bg-red-600 dark:bg-red-500";
+        return "bg-red-500";
       default:
-        return "bg-gray-600 dark:bg-gray-500";
+        return "bg-gray-300 dark:bg-gray-600";
     }
+  };
+
+  // Format the URL for display
+  const formatUrl = (url: string) => {
+    try {
+      const urlObj = new URL(url);
+      const pathParts = urlObj.pathname.split('/').filter(Boolean);
+      
+      if (pathParts[0] === 'details' && pathParts[1]) {
+        return pathParts[1];
+      }
+      
+      return url;
+    } catch {
+      return url;
+    }
+  };
+
+  // Format formats for display
+  const formatFormats = (formats?: Record<string, boolean>) => {
+    if (!formats) return "Default formats";
+    
+    const enabledFormats = Object.entries(formats)
+      .filter(([_, enabled]) => enabled)
+      .map(([format]) => format.toUpperCase());
+    
+    return enabledFormats.length > 0 
+      ? enabledFormats.join(', ')
+      : "No formats selected";
   };
 
   return (
@@ -91,51 +127,54 @@ export default function DownloadQueue({ initialItems = [] }: DownloadQueueProps)
       <div className="p-6">
         {isLoading && queue.length === 0 ? (
           <div className="flex justify-center items-center py-8">
-            <svg className="animate-spin h-8 w-8 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <svg className="animate-spin h-8 w-8 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
             </svg>
           </div>
         ) : queue.length === 0 ? (
           <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-            <svg className="mx-auto h-12 w-12 text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-            </svg>
-            <p className="mt-2 text-sm">No downloads in queue</p>
+            <p>No downloads in queue</p>
           </div>
         ) : (
           <div className="space-y-4">
             {queue.map((item) => (
-              <div key={item.id} className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden bg-white dark:bg-gray-800 shadow-sm">
-                <div className="px-4 py-3 bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
-                  <h3 className="font-medium truncate max-w-[70%] text-gray-900 dark:text-white">{item.url}</h3>
-                  <span className={`text-xs px-2.5 py-1 rounded-full border ${getStatusColor(item.status)}`}>
-                    {item.status}
-                  </span>
-                </div>
-                
+              <div key={item.id} className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
                 <div className="p-4">
-                  <div className="mb-2">
-                    <div className="h-2.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full ${getProgressColor(item.status)} rounded-full transition-all duration-300 ease-in-out`}
+                  <div className="flex flex-wrap justify-between items-start gap-2 mb-2">
+                    <div>
+                      <h3 className="font-medium text-gray-900 dark:text-white">{formatUrl(item.url)}</h3>
+                      <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{item.destination}</p>
+                      <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                        Formats: {formatFormats(item.formats)}
+                      </p>
+                    </div>
+                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(item.status)}`}>
+                      {item.status}
+                    </span>
+                  </div>
+                  
+                  {item.error && (
+                    <div className="mt-2 text-sm text-red-600 dark:text-red-400">
+                      Error: {item.error}
+                    </div>
+                  )}
+                  
+                  <div className="mt-4">
+                    <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5">
+                      <div 
+                        className={`h-2.5 rounded-full ${getProgressColor(item.status)}`} 
                         style={{ width: `${item.progress}%` }}
                       ></div>
                     </div>
                     <div className="flex justify-between mt-1">
-                      <span className="text-xs text-gray-500 dark:text-gray-400">
-                        {item.progress}% complete
-                      </span>
+                      <span className="text-xs text-gray-500 dark:text-gray-400">{item.progress}%</span>
                       {item.estimatedTime && (
                         <span className="text-xs text-gray-500 dark:text-gray-400">
-                          ETA: {item.estimatedTime}
+                          Est. time: {item.estimatedTime}
                         </span>
                       )}
                     </div>
-                  </div>
-                  
-                  <div className="text-sm text-gray-500 dark:text-gray-400 mt-2 truncate">
-                    Destination: {item.destination}
                   </div>
                 </div>
               </div>

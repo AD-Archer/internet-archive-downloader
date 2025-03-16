@@ -10,6 +10,23 @@ import toast from "react-hot-toast";
 const downloadSchema = z.object({
   url: z.string().url("Please enter a valid Internet Archive URL"),
   destination: z.string().default("/mnt/jellyfin/downloads"),
+  formats: z.object({
+    mp4: z.boolean().default(true),
+    mov: z.boolean().default(true),
+    mkv: z.boolean().default(true),
+    avi: z.boolean().default(false),
+    webm: z.boolean().default(false),
+    mp3: z.boolean().default(false),
+    flac: z.boolean().default(false),
+  }).default({
+    mp4: true,
+    mov: true,
+    mkv: true,
+    avi: false,
+    webm: false,
+    mp3: false,
+    flac: false,
+  }),
 });
 
 // Type for form data
@@ -21,6 +38,7 @@ interface DownloadFormProps {
     id: string;
     url: string;
     destination: string;
+    formats: Record<string, boolean>;
     status: string;
   }) => void;
 }
@@ -41,6 +59,15 @@ export default function DownloadForm({ onDownloadAdded }: DownloadFormProps) {
     resolver: zodResolver(downloadSchema),
     defaultValues: {
       destination: "/mnt/jellyfin/downloads",
+      formats: {
+        mp4: true,
+        mov: true,
+        mkv: true,
+        avi: false,
+        webm: false,
+        mp3: false,
+        flac: false,
+      }
     },
   });
 
@@ -118,6 +145,94 @@ export default function DownloadForm({ onDownloadAdded }: DownloadFormProps) {
           {errors.destination && (
             <p className="mt-2 text-sm text-red-600 dark:text-red-400">{errors.destination.message}</p>
           )}
+        </div>
+        
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            File Formats to Download
+          </label>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {/* Video formats */}
+            <div className="flex items-center">
+              <input
+                id="format-mp4"
+                type="checkbox"
+                {...register("formats.mp4")}
+                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+              />
+              <label htmlFor="format-mp4" className="ml-2 block text-sm text-gray-700 dark:text-gray-300">
+                MP4
+              </label>
+            </div>
+            <div className="flex items-center">
+              <input
+                id="format-mov"
+                type="checkbox"
+                {...register("formats.mov")}
+                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+              />
+              <label htmlFor="format-mov" className="ml-2 block text-sm text-gray-700 dark:text-gray-300">
+                MOV
+              </label>
+            </div>
+            <div className="flex items-center">
+              <input
+                id="format-mkv"
+                type="checkbox"
+                {...register("formats.mkv")}
+                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+              />
+              <label htmlFor="format-mkv" className="ml-2 block text-sm text-gray-700 dark:text-gray-300">
+                MKV
+              </label>
+            </div>
+            <div className="flex items-center">
+              <input
+                id="format-avi"
+                type="checkbox"
+                {...register("formats.avi")}
+                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+              />
+              <label htmlFor="format-avi" className="ml-2 block text-sm text-gray-700 dark:text-gray-300">
+                AVI
+              </label>
+            </div>
+            <div className="flex items-center">
+              <input
+                id="format-webm"
+                type="checkbox"
+                {...register("formats.webm")}
+                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+              />
+              <label htmlFor="format-webm" className="ml-2 block text-sm text-gray-700 dark:text-gray-300">
+                WEBM
+              </label>
+            </div>
+            
+            {/* Audio formats */}
+            <div className="flex items-center">
+              <input
+                id="format-mp3"
+                type="checkbox"
+                {...register("formats.mp3")}
+                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+              />
+              <label htmlFor="format-mp3" className="ml-2 block text-sm text-gray-700 dark:text-gray-300">
+                MP3
+              </label>
+            </div>
+            <div className="flex items-center">
+              <input
+                id="format-flac"
+                type="checkbox"
+                {...register("formats.flac")}
+                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+              />
+              <label htmlFor="format-flac" className="ml-2 block text-sm text-gray-700 dark:text-gray-300">
+                FLAC
+              </label>
+            </div>
+          </div>
         </div>
         
         <div>
