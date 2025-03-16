@@ -6,6 +6,9 @@ import path from "path";
 import { spawn } from "child_process";
 import os from "os";
 
+// Mark this route as dynamic
+export const dynamic = 'force-dynamic';
+
 // Download queue schema
 interface DownloadJob {
   id: string;

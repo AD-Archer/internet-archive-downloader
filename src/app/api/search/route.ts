@@ -4,6 +4,9 @@ import axios from "axios";
 // Server configuration
 const SERVER_URL = process.env.DOWNLOADER_SERVER_URL || 'http://localhost:9124';
 
+// Mark this route as dynamic to handle search parameters
+export const dynamic = 'force-dynamic';
+
 /**
  * GET handler for searching Internet Archive
  */

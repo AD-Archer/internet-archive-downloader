@@ -5,6 +5,9 @@ import axios from "axios";
 // Server configuration
 const SERVER_URL = process.env.DOWNLOADER_SERVER_URL || 'http://localhost:9124';
 
+// Mark this route as dynamic
+export const dynamic = 'force-dynamic';
+
 // Schema for batch download request validation
 const batchDownloadSchema = z.object({
   items: z.array(
