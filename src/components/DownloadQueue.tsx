@@ -168,7 +168,7 @@ export default function DownloadQueue() {
             <p className="text-gray-500 dark:text-gray-400">No downloads in queue</p>
           </div>
         ) : (
-          queue.map((item) => (
+          queue.map((item: QueueItem) => (
             <div key={item.id} className="p-4 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors">
               <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-2">
                 <div className="flex-1 min-w-0">
