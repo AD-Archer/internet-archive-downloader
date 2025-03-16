@@ -1,6 +1,6 @@
 /**
  * Persistent queue implementation for Internet Archive downloads
- * Stores queue data in a JSON file
+ * Stores queue data in a JSON file with improved file locking
  */
 
 const fs = require('fs');
@@ -10,11 +10,84 @@ const os = require('os');
 // Default queue file location
 const DEFAULT_QUEUE_PATH = path.join(os.homedir(), '.internet-archive-downloader', 'queue.json');
 
+// Lock file path
+const getLockFilePath = (queueFile) => `${queueFile}.lock`;
+
 // Ensure directory exists
 function ensureDirectoryExists(filePath) {
   const dirname = path.dirname(filePath);
   if (!fs.existsSync(dirname)) {
     fs.mkdirSync(dirname, { recursive: true });
+  }
+}
+
+/**
+ * Simple file lock implementation
+ */
+class FileLock {
+  constructor(lockFilePath) {
+    this.lockFilePath = lockFilePath;
+    this.locked = false;
+  }
+
+  /**
+   * Acquire lock with timeout
+   * @param {number} timeout - Timeout in ms
+   * @returns {Promise<boolean>} Success
+   */
+  async acquire(timeout = 5000) {
+    const startTime = Date.now();
+    
+    while (Date.now() - startTime < timeout) {
+      try {
+        // Try to create lock file
+        fs.writeFileSync(this.lockFilePath, String(process.pid), { flag: 'wx' });
+        this.locked = true;
+        return true;
+      } catch (error) {
+        // If file exists, check if lock is stale
+        if (error.code === 'EEXIST') {
+          try {
+            const lockData = fs.readFileSync(this.lockFilePath, 'utf8');
+            const lockPid = parseInt(lockData, 10);
+            
+            // Check if process is still running
+            try {
+              // On Linux/Unix, sending signal 0 checks if process exists
+              process.kill(lockPid, 0);
+              // Process exists, wait and retry
+              await new Promise(resolve => setTimeout(resolve, 100));
+            } catch (e) {
+              // Process doesn't exist, lock is stale
+              fs.unlinkSync(this.lockFilePath);
+            }
+          } catch (readError) {
+            // Can't read lock file, wait and retry
+            await new Promise(resolve => setTimeout(resolve, 100));
+          }
+        } else {
+          // Other error, wait and retry
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+      }
+    }
+    
+    // Timeout reached
+    return false;
+  }
+
+  /**
+   * Release lock
+   */
+  release() {
+    if (this.locked) {
+      try {
+        fs.unlinkSync(this.lockFilePath);
+        this.locked = false;
+      } catch (error) {
+        console.error('Error releasing lock:', error);
+      }
+    }
   }
 }
 
@@ -42,12 +115,56 @@ class QueueManager {
    */
   constructor(queueFile) {
     this.queueFile = queueFile || DEFAULT_QUEUE_PATH;
+    this.lockFile = getLockFilePath(this.queueFile);
+    this.lock = new FileLock(this.lockFile);
+    
+    // In-memory cache of the queue
+    this.queue = [];
+    
     // Ensure the directory exists
     ensureDirectoryExists(this.queueFile);
-    this.queue = this.loadQueue();
     
-    // Set up file watcher to detect external changes
+    // Load queue initially
+    this.loadQueue();
+    
+    // Throttled save to reduce disk writes
+    this.saveThrottled = this.throttle(this.saveQueue.bind(this), 1000);
+    
+    // Set up file watcher with debounce
     this.setupFileWatcher();
+    
+    // Clean up lock file on exit
+    process.on('exit', () => {
+      if (this.lock.locked) {
+        this.lock.release();
+      }
+    });
+  }
+  
+  /**
+   * Throttle function to limit calls
+   * @param {Function} func - Function to throttle
+   * @param {number} limit - Time limit in ms
+   * @returns {Function} Throttled function
+   */
+  throttle(func, limit) {
+    let lastCall = 0;
+    let timeout = null;
+    
+    return function(...args) {
+      const now = Date.now();
+      
+      if (now - lastCall >= limit) {
+        lastCall = now;
+        return func.apply(this, args);
+      } else {
+        clearTimeout(timeout);
+        timeout = setTimeout(() => {
+          lastCall = Date.now();
+          func.apply(this, args);
+        }, limit - (now - lastCall));
+      }
+    };
   }
   
   /**
@@ -60,11 +177,23 @@ class QueueManager {
         this.saveQueue();
       }
       
+      // Debounce variable to prevent multiple reloads
+      let debounceTimeout = null;
+      
       // Watch for changes to the queue file
-      fs.watchFile(this.queueFile, (curr, prev) => {
+      fs.watchFile(this.queueFile, { interval: 2000 }, (curr, prev) => {
         if (curr.mtime !== prev.mtime) {
-          console.log('Queue file changed externally, reloading...');
-          this.queue = this.loadQueue();
+          // Clear any pending debounce
+          if (debounceTimeout) {
+            clearTimeout(debounceTimeout);
+          }
+          
+          // Set new debounce
+          debounceTimeout = setTimeout(() => {
+            console.log('Queue file changed externally, reloading...');
+            this.loadQueue();
+            debounceTimeout = null;
+          }, 500);
         }
       });
     } catch (error) {
@@ -73,38 +202,86 @@ class QueueManager {
   }
   
   /**
-   * Load queue from file
+   * Load queue from file with locking
    * @returns {QueueItem[]} Queue items
    */
-  loadQueue() {
+  async loadQueue() {
     try {
-      if (fs.existsSync(this.queueFile)) {
-        const data = fs.readFileSync(this.queueFile, 'utf8');
-        try {
-          return JSON.parse(data) || [];
-        } catch (parseError) {
-          console.error('Error parsing queue file:', parseError);
-          // Backup the corrupted file
-          const backupPath = `${this.queueFile}.backup.${Date.now()}`;
-          fs.copyFileSync(this.queueFile, backupPath);
-          console.log(`Backed up corrupted queue file to ${backupPath}`);
-          return [];
+      // Acquire lock
+      const lockAcquired = await this.lock.acquire();
+      
+      if (!lockAcquired) {
+        console.warn('Could not acquire lock to load queue, using cached version');
+        return this.queue;
+      }
+      
+      try {
+        if (fs.existsSync(this.queueFile)) {
+          const data = fs.readFileSync(this.queueFile, 'utf8');
+          
+          if (!data || data.trim() === '') {
+            // Empty file, initialize with empty array
+            this.queue = [];
+            fs.writeFileSync(this.queueFile, '[]', 'utf8');
+          } else {
+            try {
+              this.queue = JSON.parse(data) || [];
+            } catch (parseError) {
+              console.error('Error parsing queue file:', parseError);
+              // Backup the corrupted file
+              const backupPath = `${this.queueFile}.backup.${Date.now()}`;
+              fs.copyFileSync(this.queueFile, backupPath);
+              console.log(`Backed up corrupted queue file to ${backupPath}`);
+              
+              // Reset queue and write empty array
+              this.queue = [];
+              fs.writeFileSync(this.queueFile, '[]', 'utf8');
+            }
+          }
+        } else {
+          // File doesn't exist, create it
+          this.queue = [];
+          fs.writeFileSync(this.queueFile, '[]', 'utf8');
         }
+      } finally {
+        // Release lock
+        this.lock.release();
       }
     } catch (error) {
       console.error('Error loading queue:', error);
     }
     
-    return [];
+    return this.queue;
   }
   
   /**
-   * Save queue to file
+   * Save queue to file with locking
    */
-  saveQueue() {
+  async saveQueue() {
     try {
-      ensureDirectoryExists(this.queueFile);
-      fs.writeFileSync(this.queueFile, JSON.stringify(this.queue, null, 2), 'utf8');
+      // Acquire lock
+      const lockAcquired = await this.lock.acquire();
+      
+      if (!lockAcquired) {
+        console.warn('Could not acquire lock to save queue, will retry later');
+        // Schedule retry
+        setTimeout(() => this.saveQueue(), 500);
+        return;
+      }
+      
+      try {
+        ensureDirectoryExists(this.queueFile);
+        
+        // Write to temporary file first
+        const tempFile = `${this.queueFile}.tmp`;
+        fs.writeFileSync(tempFile, JSON.stringify(this.queue, null, 2), 'utf8');
+        
+        // Rename temp file to actual file (atomic operation)
+        fs.renameSync(tempFile, this.queueFile);
+      } finally {
+        // Release lock
+        this.lock.release();
+      }
     } catch (error) {
       console.error('Error saving queue:', error);
     }
@@ -115,10 +292,7 @@ class QueueManager {
    * @param {QueueItem} item - Queue item
    * @returns {QueueItem} Added item
    */
-  addItem(item) {
-    // Reload queue to ensure we have the latest version
-    this.queue = this.loadQueue();
-    
+  async addItem(item) {
     // Ensure required fields
     const newItem = {
       id: item.id || `job_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
@@ -130,6 +304,9 @@ class QueueManager {
       createdAt: item.createdAt || new Date().toISOString()
     };
     
+    // Load latest queue
+    await this.loadQueue();
+    
     // Check if item with same ID already exists
     const existingIndex = this.queue.findIndex(i => i.id === newItem.id);
     if (existingIndex !== -1) {
@@ -140,7 +317,8 @@ class QueueManager {
       this.queue.push(newItem);
     }
     
-    this.saveQueue();
+    // Save queue
+    this.saveThrottled();
     
     return newItem;
   }
@@ -149,9 +327,9 @@ class QueueManager {
    * Get all queue items
    * @returns {QueueItem[]} Queue items
    */
-  getItems() {
-    // Reload queue to ensure we have the latest version
-    this.queue = this.loadQueue();
+  async getItems() {
+    // Load latest queue
+    await this.loadQueue();
     return this.queue;
   }
   
@@ -159,9 +337,9 @@ class QueueManager {
    * Get next item to process
    * @returns {QueueItem|null} Next item or null
    */
-  getNextItem() {
-    // Reload queue to ensure we have the latest version
-    this.queue = this.loadQueue();
+  async getNextItem() {
+    // Load latest queue
+    await this.loadQueue();
     return this.queue.find(item => item.status === 'queued');
   }
   
@@ -170,9 +348,9 @@ class QueueManager {
    * @param {string} id - Item ID
    * @returns {QueueItem|null} Item or null
    */
-  getItem(id) {
-    // Reload queue to ensure we have the latest version
-    this.queue = this.loadQueue();
+  async getItem(id) {
+    // Load latest queue
+    await this.loadQueue();
     return this.queue.find(item => item.id === id);
   }
   
@@ -182,9 +360,9 @@ class QueueManager {
    * @param {Partial<QueueItem>} updates - Updates to apply
    * @returns {QueueItem|null} Updated item or null
    */
-  updateItem(id, updates) {
-    // Reload queue to ensure we have the latest version
-    this.queue = this.loadQueue();
+  async updateItem(id, updates) {
+    // Load latest queue
+    await this.loadQueue();
     
     const index = this.queue.findIndex(item => item.id === id);
     
@@ -193,7 +371,9 @@ class QueueManager {
     }
     
     this.queue[index] = { ...this.queue[index], ...updates };
-    this.saveQueue();
+    
+    // Save queue
+    this.saveThrottled();
     
     return this.queue[index];
   }
@@ -203,9 +383,9 @@ class QueueManager {
    * @param {string} id - Item ID
    * @returns {boolean} Success
    */
-  removeItem(id) {
-    // Reload queue to ensure we have the latest version
-    this.queue = this.loadQueue();
+  async removeItem(id) {
+    // Load latest queue
+    await this.loadQueue();
     
     const index = this.queue.findIndex(item => item.id === id);
     
@@ -215,18 +395,9 @@ class QueueManager {
     
     // Remove the item
     this.queue.splice(index, 1);
-    this.saveQueue();
     
-    // Verify the item was actually removed
-    const verifyQueue = this.loadQueue();
-    const stillExists = verifyQueue.some(item => item.id === id);
-    
-    if (stillExists) {
-      console.error(`Failed to remove item ${id} from queue, trying again...`);
-      // Try one more time with a direct approach
-      this.queue = verifyQueue.filter(item => item.id !== id);
-      this.saveQueue();
-    }
+    // Save queue
+    await this.saveQueue();
     
     return true;
   }
@@ -235,9 +406,9 @@ class QueueManager {
    * Clear the entire queue
    * @returns {boolean} Success
    */
-  clearQueue() {
+  async clearQueue() {
     this.queue = [];
-    this.saveQueue();
+    await this.saveQueue();
     return true;
   }
 }
