@@ -264,6 +264,21 @@ function shouldDownloadFile(filename) {
 }
 
 /**
+ * Extract identifier from URL or return the identifier directly
+ * @param {string} urlOrIdentifier - URL or identifier
+ * @returns {string|null} Identifier or null
+ */
+function extractIdentifier(urlOrIdentifier) {
+  // If it's already an identifier (no slashes or dots)
+  if (!urlOrIdentifier.includes('/') && !urlOrIdentifier.includes('.')) {
+    return urlOrIdentifier;
+  }
+  
+  // Try to parse as URL
+  return parseArchiveUrl(urlOrIdentifier);
+}
+
+/**
  * Process a download from Internet Archive
  * @param {string} url - URL or identifier
  * @param {string} destination - Destination directory
@@ -646,12 +661,16 @@ async function processQueue() {
           retries,
           status: 'queued',
           error: error.message
+        }).catch(err => {
+          console.error(`Error updating retry status: ${err.message}`);
         });
       } else {
         console.error(`Failed to download after 3 attempts: ${nextItem.url}`);
         queueManager.updateItem(nextItem.id, { 
           status: 'failed',
           error: `Failed after 3 attempts: ${error.message}`
+        }).catch(err => {
+          console.error(`Error updating failure status: ${err.message}`);
         });
         
         // Send notification if enabled
@@ -731,20 +750,25 @@ function startBrowserServer(port) {
   });
   
   // GET endpoint to retrieve queue stats
-  app.get('/api/queue/stats', (req, res) => {
-    const items = queueManager.getItems();
-    
-    const stats = {
-      total: items.length,
-      queued: items.filter(item => item.status === 'queued').length,
-      downloading: items.filter(item => item.status === 'downloading').length,
-      completed: items.filter(item => item.status === 'completed').length,
-      failed: items.filter(item => item.status === 'failed').length,
-      totalSize: items.reduce((sum, item) => sum + (parseInt(item.totalSize) || 0), 0),
-      totalSizeFormatted: formatFileSize(items.reduce((sum, item) => sum + (parseInt(item.totalSize) || 0), 0))
-    };
-    
-    res.json({ stats });
+  app.get('/api/queue/stats', async (req, res) => {
+    try {
+      const items = await queueManager.getItems();
+      
+      const stats = {
+        total: items.length,
+        queued: items.filter(item => item.status === 'queued').length,
+        downloading: items.filter(item => item.status === 'downloading').length,
+        completed: items.filter(item => item.status === 'completed').length,
+        failed: items.filter(item => item.status === 'failed').length,
+        totalSize: items.reduce((sum, item) => sum + (parseInt(item.totalSize) || 0), 0),
+        totalSizeFormatted: formatFileSize(items.reduce((sum, item) => sum + (parseInt(item.totalSize) || 0), 0))
+      };
+      
+      res.json({ stats });
+    } catch (error) {
+      console.error('Error retrieving queue stats:', error);
+      res.status(500).json({ error: 'Failed to retrieve queue stats' });
+    }
   });
   
   // GET endpoint to search Internet Archive
@@ -858,7 +882,7 @@ function startBrowserServer(port) {
         };
         
         // Add to queue
-        queueManager.addItem(job);
+        await queueManager.addItem(job);
         jobs.push(job);
       }
       
@@ -1031,7 +1055,7 @@ function startBrowserServer(port) {
   });
   
   // POST endpoint to stop a download
-  app.post('/api/queue/:id/stop', (req, res) => {
+  app.post('/api/queue/:id/stop', async (req, res) => {
     try {
       const { id } = req.params;
       
@@ -1040,7 +1064,7 @@ function startBrowserServer(port) {
       }
       
       // Get the item
-      const item = queueManager.getItem(id);
+      const item = await queueManager.getItem(id);
       
       if (!item) {
         return res.status(404).json({ error: 'Item not found in queue' });
@@ -1077,7 +1101,7 @@ function startBrowserServer(port) {
         }
         
         // Update the item status
-        queueManager.updateItem(id, {
+        await queueManager.updateItem(id, {
           status: 'failed',
           error: 'Download stopped by user'
         });
@@ -1085,7 +1109,7 @@ function startBrowserServer(port) {
         res.json({ success: true, message: 'Download stopped' });
       } else {
         // If not downloading, just update the status
-        queueManager.updateItem(id, {
+        await queueManager.updateItem(id, {
           status: 'failed',
           error: 'Download stopped by user'
         });
@@ -1187,7 +1211,7 @@ async function main() {
         };
         
         console.log(`Adding to queue: ${result.title} (${result.identifier})`);
-        queueManager.addItem(job);
+        await queueManager.addItem(job);
       }
       
       // Start processing the queue
@@ -1216,7 +1240,7 @@ async function main() {
       createdAt: new Date().toISOString()
     };
     
-    queueManager.addItem(job);
+    await queueManager.addItem(job);
     await processDownload(options.url, options.destination, job.id);
     return;
   }
@@ -1232,7 +1256,7 @@ async function main() {
       createdAt: new Date().toISOString()
     };
     
-    queueManager.addItem(job);
+    await queueManager.addItem(job);
     await processDownload(options.identifier, options.destination, job.id);
     return;
   }
