@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
-import { Toaster } from "react-hot-toast";
+import { DownloadProvider } from '@/context';
+import { ToastContainer } from '@/components';
 
 // Use Inter font with extended Latin character set
 const inter = Inter({ 
@@ -13,6 +14,7 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "Internet Archive Downloader",
   description: "Download content from Internet Archive to your server",
+  metadataBase: new URL(process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:9321"),
   openGraph: {
     images: [
       {
@@ -42,8 +44,10 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark:bg-gray-900">
       <body className={`${inter.className} bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 min-h-screen`}>
-        <Toaster position="top-right" />
-        {children}
+        <DownloadProvider>
+          <ToastContainer />
+          {children}
+        </DownloadProvider>
       </body>
     </html>
   );

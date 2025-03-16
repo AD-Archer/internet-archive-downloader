@@ -5,6 +5,7 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import toast from "react-hot-toast";
+import { useDownload, DownloadFormData as ContextFormData } from "@/context/DownloadContext";
 
 // Form schema for download request
 const downloadSchema = z.object({
@@ -35,27 +36,18 @@ const downloadSchema = z.object({
 // Type for form data
 type DownloadFormData = z.infer<typeof downloadSchema>;
 
-// Props for the component
-interface DownloadFormProps {
-  onDownloadAdded: (download: {
-    id: string;
-    url: string;
-    destination: string;
-    formats: Record<string, boolean>;
-    status: string;
-    priority?: string;
-  }) => void;
-}
-
 /**
  * Form component for adding new downloads
  */
-export default function DownloadForm({ onDownloadAdded }: DownloadFormProps) {
+export default function DownloadForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showBatchOptions, setShowBatchOptions] = useState(false);
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
+  
+  // Use the download context
+  const { submitDownload, submitBatchDownload } = useDownload();
   
   // Form setup with validation
   const {
@@ -134,46 +126,17 @@ export default function DownloadForm({ onDownloadAdded }: DownloadFormProps) {
 
     try {
       setIsSubmitting(true);
-      
       const formValues = watch();
       
-      // Log the formats being sent to the server
-      console.log("Sending batch formats to server:", formValues.formats);
-      
-      const response = await fetch("/api/queue/batch", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          items: selectedItems.map(id => ({ identifier: id })),
-          destination: formValues.destination,
-          formats: formValues.formats,
-          priority: formValues.priority,
-        }),
-      });
-      
-      if (!response.ok) {
-        throw new Error("Failed to add batch downloads to queue");
-      }
-      
-      const result = await response.json();
-      
-      // Call the callback for each job
-      if (result.jobs && Array.isArray(result.jobs)) {
-        result.jobs.forEach((job: any) => {
-          onDownloadAdded(job);
-        });
-      }
+      // Use context function to submit batch download
+      await submitBatchDownload(selectedItems, formValues as ContextFormData);
       
       // Reset form and selections
       setSelectedItems([]);
       setSearchResults([]);
       setValue("searchQuery", "");
-      toast.success(`Added ${result.jobs.length} downloads to queue`);
     } catch (error) {
       console.error("Error adding batch downloads:", error);
-      toast.error("Failed to add batch downloads");
     } finally {
       setIsSubmitting(false);
     }
@@ -184,38 +147,13 @@ export default function DownloadForm({ onDownloadAdded }: DownloadFormProps) {
     try {
       setIsSubmitting(true);
       
-      // Log the formats being sent to the server
-      console.log("Sending formats to server:", data.formats);
-      
-      // Submit to API
-      const response = await fetch("/api/queue", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          url: data.url,
-          destination: data.destination,
-          formats: data.formats,
-          priority: data.priority,
-        }),
-      });
-      
-      if (!response.ok) {
-        throw new Error("Failed to add download to queue");
-      }
-      
-      const result = await response.json();
-      
-      // Call the callback with the new download
-      onDownloadAdded(result.job);
+      // Use context function to submit download
+      await submitDownload(data as ContextFormData);
       
       // Reset form
       reset();
-      toast.success("Download added to queue");
     } catch (error) {
       console.error("Error adding download:", error);
-      toast.error("Failed to add download");
     } finally {
       setIsSubmitting(false);
     }
