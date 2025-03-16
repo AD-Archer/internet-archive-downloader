@@ -1,0 +1,172 @@
+@import "tailwindcss";
+
+:root {
+  /* Modern color palette */
+  --primary: #3a86ff;
+  --primary-dark: #2667cc;
+  --secondary: #8338ec;
+  --accent: #ff006e;
+  --success: #06d6a0;
+  --warning: #ffbe0b;
+  --danger: #ef476f;
+  --background: #ffffff;
+  --card-bg: #ffffff;
+  --foreground: #1a1a2e;
+  --text-muted: #64748b;
+  --border: #e2e8f0;
+  --input-bg: #f8fafc;
+  --input-border: #cbd5e1;
+  --shadow: rgba(0, 0, 0, 0.05);
+  --info: #3b82f6;
+  --neutral: #94a3b8;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --primary: #3a86ff;
+    --primary-dark: #2667cc;
+    --secondary: #8338ec;
+    --accent: #ff006e;
+    --success: #06d6a0;
+    --warning: #ffbe0b;
+    --danger: #ef476f;
+    --background: #0f172a;
+    --card-bg: #1e293b;
+    --foreground: #f8fafc;
+    --text-muted: #94a3b8;
+    --border: #334155;
+    --input-bg: #1e293b;
+    --input-border: #475569;
+    --shadow: rgba(0, 0, 0, 0.3);
+    --info: #60a5fa;
+    --neutral: #64748b;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Modern form elements */
+input, select, textarea {
+  background-color: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  transition: all 0.2s ease;
+  width: 100%;
+  color: var(--foreground);
+}
+
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(58, 134, 255, 0.2);
+}
+
+/* Custom button styles */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.5rem;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  padding: 0.75rem 1.5rem;
+  cursor: pointer;
+}
+
+.btn-primary {
+  background-color: var(--primary);
+  color: white;
+}
+
+.btn-primary:hover {
+  background-color: var(--primary-dark);
+}
+
+.btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Card styles */
+.card {
+  background-color: var(--card-bg);
+  border-radius: 1rem;
+  box-shadow: 0 4px 20px var(--shadow);
+  overflow: hidden;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 30px var(--shadow);
+}
+
+/* Table styles */
+table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+th {
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+td, th {
+  padding: 1rem;
+  text-align: left;
+}
+
+tbody tr {
+  border-top: 1px solid var(--border);
+}
+
+/* Status badges */
+.status-badge {
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  display: inline-block;
+}
+
+.status-pending {
+  background-color: var(--warning);
+  color: #000;
+}
+
+.status-completed {
+  background-color: var(--success);
+  color: #fff;
+}
+
+.status-failed {
+  background-color: var(--danger);
+  color: #fff;
+}
+
+/* Queue status badges */
+.status-queued {
+  background-color: var(--neutral);
+  color: #fff;
+}
+
+.status-downloading {
+  background-color: var(--info);
+  color: #fff;
+}
+
+.status-canceled {
+  background-color: var(--text-muted);
+  color: #fff;
+}

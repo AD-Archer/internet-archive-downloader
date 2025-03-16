@@ -1,0 +1,20 @@
+{
+  "queue": [
+    {
+      "id": "1742150617428",
+      "url": "https://archive.org/details/ikaos-som-dragon-ball-complete-001-153-r2j-dragon-box-multi-audio-v4_202301",
+      "downloadPath": "/Users/archer/Downloads",
+      "fileTypes": [
+        "mkv"
+      ],
+      "isPlaylist": false,
+      "status": "downloading",
+      "progress": 24.4,
+      "filesCompleted": 1,
+      "totalFiles": 1,
+      "timestamp": "2025-03-16T18:43:37.428Z",
+      "message": "Download started",
+      "processId": 31014
+    }
+  ]
+}

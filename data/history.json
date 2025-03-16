@@ -1,0 +1,42 @@
+{
+  "history": [
+    {
+      "id": "1742150356730",
+      "url": "https://archive.org/details/ikaos-som-dragon-ball-complete-001-153-r2j-dragon-box-multi-audio-v4_202301",
+      "downloadPath": "/",
+      "fileTypes": [
+        "mp4",
+        "mkv"
+      ],
+      "isPlaylist": false,
+      "status": "failed",
+      "timestamp": "2025-03-16T18:39:16.730Z",
+      "message": "Download failed with exit code 1"
+    },
+    {
+      "id": "1742150236015",
+      "url": "https://archive.org/details/ikaos-som-dragon-ball-complete-001-153-r2j-dragon-box-multi-audio-v4_202301",
+      "downloadPath": "/",
+      "fileTypes": [
+        "mp4",
+        "mkv"
+      ],
+      "isPlaylist": false,
+      "status": "failed",
+      "timestamp": "2025-03-16T18:37:16.015Z",
+      "message": "Download failed with exit code 127"
+    },
+    {
+      "id": "1742149608921",
+      "url": "https://archive.org/details/ikaos-som-dragon-ball-complete-001-153-r2j-dragon-box-multi-audio-v4_202301",
+      "downloadPath": "/",
+      "fileTypes": [
+        "mkv"
+      ],
+      "isPlaylist": false,
+      "status": "pending",
+      "timestamp": "2025-03-16T18:26:48.921Z",
+      "message": "Download started. Files will be saved to /"
+    }
+  ]
+}
