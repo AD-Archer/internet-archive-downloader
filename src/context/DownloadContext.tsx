@@ -79,14 +79,17 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
   const [isPaused, setIsPaused] = useState(false);
   const [isTogglingPause, setIsTogglingPause] = useState(false);
 
+  // API base URL from environment variable or fallback to relative path
+  const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || '/api';
+
   // Fetch queue data on mount and periodically
   const fetchQueue = async () => {
     try {
       setIsLoading(true);
       // Fetch both queue and stats in parallel for efficiency
       const [queueResponse, statsResponse] = await Promise.all([
-        fetch("/api/queue"),
-        fetch("/api/queue/stats")
+        fetch(`${apiBaseUrl}/queue`),
+        fetch(`${apiBaseUrl}/queue/stats`)
       ]);
       
       if (!queueResponse.ok || !statsResponse.ok) {
@@ -116,7 +119,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
   // Fetch queue pause status
   const fetchQueueStatus = async () => {
     try {
-      const response = await fetch("/api/queue/status");
+      const response = await fetch(`${apiBaseUrl}/queue/status`);
       
       if (!response.ok) {
         throw new Error("Failed to fetch queue status");
@@ -159,7 +162,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
   // Remove an item from the queue
   const removeItem = async (id: string) => {
     try {
-      const response = await fetch(`/api/queue/${id}`, {
+      const response = await fetch(`${apiBaseUrl}/queue/${id}`, {
         method: "DELETE",
       });
       
@@ -179,7 +182,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
   // Stop a download
   const stopDownload = async (id: string) => {
     try {
-      const response = await fetch(`/api/queue/${id}/stop`, {
+      const response = await fetch(`${apiBaseUrl}/queue/${id}/stop`, {
         method: "POST",
       });
       
@@ -199,7 +202,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
   // Retry a failed download
   const retryDownload = async (id: string) => {
     try {
-      const response = await fetch(`/api/queue/${id}/retry`, {
+      const response = await fetch(`${apiBaseUrl}/queue/${id}/retry`, {
         method: "POST",
       });
       
@@ -219,7 +222,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
   // Prioritize a download
   const prioritizeDownload = async (id: string) => {
     try {
-      const response = await fetch(`/api/queue/${id}/prioritize`, {
+      const response = await fetch(`${apiBaseUrl}/queue/${id}/prioritize`, {
         method: "POST",
       });
       
@@ -240,7 +243,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
   const toggleQueuePause = async () => {
     try {
       setIsTogglingPause(true);
-      const response = await fetch("/api/queue/pause", {
+      const response = await fetch(`${apiBaseUrl}/queue/pause`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -266,7 +269,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
   const clearQueue = async () => {
     try {
       setIsClearing(true);
-      const response = await fetch("/api/queue/clear", {
+      const response = await fetch(`${apiBaseUrl}/queue/clear`, {
         method: "POST",
       });
       
@@ -288,7 +291,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
   const submitDownload = async (data: DownloadFormData) => {
     try {
       // Submit to API
-      const response = await fetch("/api/queue", {
+      const response = await fetch(`${apiBaseUrl}/queue`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -322,7 +325,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
   // Submit batch downloads
   const submitBatchDownload = async (selectedItems: string[], formData: DownloadFormData) => {
     try {
-      const response = await fetch("/api/queue/batch", {
+      const response = await fetch(`${apiBaseUrl}/queue/batch`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

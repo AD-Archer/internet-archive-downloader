@@ -16,6 +16,15 @@ const nextConfig = {
   experimental: {
     serverComponentsExternalPackages: [],
   },
+  // API routes proxy configuration
+  async rewrites() {
+    return [
+      {
+        source: '/api/:path*',
+        destination: 'http://localhost:9123/api/:path*', // Proxy to backend server
+      },
+    ];
+  },
 };
 
 module.exports = nextConfig; 
