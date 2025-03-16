@@ -11,12 +11,17 @@
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "test:components": "jest src/__tests__/components",
-    "test:app": "jest src/__tests__/app"
+    "test:app": "jest src/__tests__/app",
+    "downloader:server": "node src/server/start-server.js",
+    "downloader": "node src/server/downloader.js",
+    "postinstall": "chmod +x src/server/downloader.js src/server/start-server.js"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.3.4",
     "axios": "^1.6.7",
     "commander": "^12.0.0",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
     "next": "14.1.0",
     "react": "^18",
     "react-dom": "^18",

@@ -10,6 +10,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 const { program } = require('commander');
+const QueueManager = require('./queue');
 
 // Configure command-line options
 program
@@ -19,12 +20,17 @@ program
   .option('-d, --destination <path>', 'Destination path', '/mnt/jellyfin/downloads')
   .option('-i, --identifier <id>', 'Internet Archive identifier (alternative to URL)')
   .option('-q, --queue <file>', 'Path to queue file')
+  .option('-b, --browser', 'Enable browser download mode for testing')
+  .option('-p, --port <number>', 'Port for browser download server', '3001')
   .parse(process.argv);
 
 const options = program.opts();
 
-// Queue for tracking downloads
-const queue = [];
+// Initialize queue manager
+const queueManager = new QueueManager(options.queue);
+
+// Flag to track if download process is running
+let isProcessing = false;
 
 /**
  * Parse Internet Archive URL to extract identifier
@@ -63,7 +69,7 @@ async function getArchiveMetadata(identifier) {
 /**
  * Download a file using wget
  */
-async function downloadWithWget(url, destination) {
+async function downloadWithWget(url, destination, jobId) {
   return new Promise((resolve, reject) => {
     // Ensure destination directory exists
     const dir = path.dirname(destination);
@@ -72,6 +78,14 @@ async function downloadWithWget(url, destination) {
     }
     
     console.log(`Downloading ${url} to ${destination}`);
+    
+    // Update job status
+    if (jobId) {
+      queueManager.updateItem(jobId, { 
+        status: 'downloading',
+        progress: 0
+      });
+    }
     
     // Use wget to download the file
     const wget = spawn('wget', [
@@ -90,6 +104,15 @@ async function downloadWithWget(url, destination) {
         if (percentMatch && percentMatch[1]) {
           const progress = parseInt(percentMatch[1], 10);
           console.log(`Download progress: ${progress}%`);
+          
+          // Update job progress
+          if (jobId) {
+            const estimatedTime = output.match(/(\d+[hms])/);
+            queueManager.updateItem(jobId, { 
+              progress,
+              estimatedTime: estimatedTime ? estimatedTime[1] : undefined
+            });
+          }
         }
       }
     });
@@ -98,10 +121,28 @@ async function downloadWithWget(url, destination) {
     wget.on('close', (code) => {
       if (code === 0) {
         console.log(`Download completed: ${destination}`);
+        
+        // Update job status
+        if (jobId) {
+          queueManager.updateItem(jobId, { 
+            status: 'completed',
+            progress: 100
+          });
+        }
+        
         resolve();
       } else {
         const error = new Error(`wget exited with code ${code}`);
         console.error(error.message);
+        
+        // Update job status
+        if (jobId) {
+          queueManager.updateItem(jobId, { 
+            status: 'failed',
+            error: `wget exited with code ${code}`
+          });
+        }
+        
         reject(error);
       }
     });
@@ -109,6 +150,15 @@ async function downloadWithWget(url, destination) {
     // Handle errors
     wget.on('error', (error) => {
       console.error(`Download error: ${error.message}`);
+      
+      // Update job status
+      if (jobId) {
+        queueManager.updateItem(jobId, { 
+          status: 'failed',
+          error: error.message
+        });
+      }
+      
       reject(error);
     });
   });
@@ -117,7 +167,7 @@ async function downloadWithWget(url, destination) {
 /**
  * Process a download from Internet Archive
  */
-async function processDownload(url, destination) {
+async function processDownload(url, destination, jobId) {
   try {
     // Parse URL to get identifier
     const identifier = url.includes('archive.org') 
@@ -157,13 +207,22 @@ async function processDownload(url, destination) {
       const fileUrl = `https://archive.org/download/${identifier}/${file.name}`;
       const filePath = path.join(itemDir, file.name);
       
-      await downloadWithWget(fileUrl, filePath);
+      await downloadWithWget(fileUrl, filePath, jobId);
     }
     
     console.log(`All files downloaded for ${identifier}`);
     return true;
   } catch (error) {
     console.error(`Error processing download: ${error.message}`);
+    
+    // Update job status
+    if (jobId) {
+      queueManager.updateItem(jobId, { 
+        status: 'failed',
+        error: error.message
+      });
+    }
+    
     return false;
   }
 }
@@ -172,78 +231,183 @@ async function processDownload(url, destination) {
  * Process the download queue
  */
 async function processQueue() {
-  if (queue.length === 0) {
-    console.log('Queue is empty');
+  if (isProcessing) {
     return;
   }
   
-  const item = queue[0];
-  console.log(`Processing queue item: ${item.url}`);
+  const nextItem = queueManager.getNextItem();
+  
+  if (!nextItem) {
+    console.log('No items in queue to process');
+    return;
+  }
+  
+  console.log(`Processing queue item: ${nextItem.url}`);
+  isProcessing = true;
   
   try {
-    const success = await processDownload(item.url, item.destination);
-    
-    // Remove from queue
-    queue.shift();
-    
-    console.log(`Queue item processed. ${queue.length} items remaining.`);
+    await processDownload(nextItem.url, nextItem.destination, nextItem.id);
+    console.log(`Queue item processed. Checking for more items...`);
   } catch (error) {
     console.error(`Error processing queue item: ${error.message}`);
     
-    // Move failed item to the end of the queue
-    const failedItem = queue.shift();
-    failedItem.retries = (failedItem.retries || 0) + 1;
+    // Update retry count
+    const retries = (nextItem.retries || 0) + 1;
     
-    if (failedItem.retries < 3) {
-      console.log(`Retrying later (attempt ${failedItem.retries}/3)`);
-      queue.push(failedItem);
+    if (retries < 3) {
+      console.log(`Will retry later (attempt ${retries}/3)`);
+      queueManager.updateItem(nextItem.id, { 
+        retries,
+        status: 'queued',
+        error: error.message
+      });
     } else {
-      console.error(`Failed to download after 3 attempts: ${failedItem.url}`);
+      console.error(`Failed to download after 3 attempts: ${nextItem.url}`);
+      queueManager.updateItem(nextItem.id, { 
+        status: 'failed',
+        error: `Failed after 3 attempts: ${error.message}`
+      });
     }
-  }
-  
-  // Process next item after a delay
-  if (queue.length > 0) {
+  } finally {
+    isProcessing = false;
+    
+    // Check if there are more items to process
     setTimeout(processQueue, 1000);
   }
+}
+
+/**
+ * Start a simple HTTP server for browser-based downloads
+ */
+function startBrowserServer(port) {
+  const express = require('express');
+  const cors = require('cors');
+  const app = express();
+  
+  // Enable CORS for all routes
+  app.use(cors());
+  
+  // Parse JSON request body
+  app.use(express.json());
+  
+  // GET endpoint to retrieve queue
+  app.get('/api/queue', (req, res) => {
+    res.json({ queue: queueManager.getItems() });
+  });
+  
+  // POST endpoint to add download to queue
+  app.post('/api/queue', async (req, res) => {
+    try {
+      const { url, destination } = req.body;
+      
+      if (!url) {
+        return res.status(400).json({ error: 'URL is required' });
+      }
+      
+      // Create job
+      const job = {
+        id: Date.now().toString(),
+        url,
+        destination: destination || options.destination,
+        status: 'queued',
+        progress: 0,
+        createdAt: new Date().toISOString()
+      };
+      
+      // Add to queue
+      queueManager.addItem(job);
+      
+      // Start processing queue if not already running
+      setTimeout(processQueue, 100);
+      
+      res.status(201).json({ 
+        message: 'Download added to queue',
+        job
+      });
+    } catch (error) {
+      console.error('Error adding to queue:', error);
+      res.status(500).json({ error: 'Failed to add download to queue' });
+    }
+  });
+  
+  // Start server
+  app.listen(port, () => {
+    console.log(`Browser download server running at http://localhost:${port}`);
+    console.log(`API endpoints:`);
+    console.log(`- GET /api/queue - Get current queue`);
+    console.log(`- POST /api/queue - Add download to queue`);
+  });
 }
 
 /**
  * Main function
  */
 async function main() {
+  console.log('Internet Archive Downloader starting...');
+  
+  // Start browser server if requested
+  if (options.browser) {
+    try {
+      // Check if express is installed
+      require.resolve('express');
+      startBrowserServer(options.port);
+    } catch (error) {
+      console.error('Express is required for browser mode. Install with: npm install express cors');
+      process.exit(1);
+    }
+  }
+  
   // Handle direct URL download
   if (options.url) {
-    await processDownload(options.url, options.destination);
+    const job = {
+      id: Date.now().toString(),
+      url: options.url,
+      destination: options.destination,
+      status: 'queued',
+      progress: 0,
+      createdAt: new Date().toISOString()
+    };
+    
+    queueManager.addItem(job);
+    await processDownload(options.url, options.destination, job.id);
     return;
   }
   
   // Handle identifier download
   if (options.identifier) {
-    await processDownload(options.identifier, options.destination);
+    const job = {
+      id: Date.now().toString(),
+      url: options.identifier,
+      destination: options.destination,
+      status: 'queued',
+      progress: 0,
+      createdAt: new Date().toISOString()
+    };
+    
+    queueManager.addItem(job);
+    await processDownload(options.identifier, options.destination, job.id);
     return;
   }
   
-  // Handle queue file
-  if (options.queue) {
-    try {
-      const queueData = JSON.parse(fs.readFileSync(options.queue, 'utf8'));
-      queue.push(...queueData);
-      console.log(`Loaded ${queue.length} items from queue file`);
+  // Start processing the queue
+  if (!options.url && !options.identifier && !options.browser) {
+    console.log('Starting queue processor...');
+    processQueue();
+    
+    // Keep the process running
+    setInterval(() => {
       processQueue();
-    } catch (error) {
-      console.error(`Error loading queue file: ${error.message}`);
-    }
-  } else {
-    console.log('No URL, identifier, or queue file specified. Use --help for usage information.');
+    }, 10000);
   }
 }
 
 // Run the main function
-main().catch(error => {
-  console.error('Error:', error.message);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch(error => {
+    console.error('Error:', error.message);
+    process.exit(1);
+  });
+}
 
 // Export functions for testing
 module.exports = {
@@ -251,5 +415,6 @@ module.exports = {
   getArchiveMetadata,
   downloadWithWget,
   processDownload,
-  processQueue
+  processQueue,
+  queueManager
 }; 
