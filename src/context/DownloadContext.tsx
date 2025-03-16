@@ -69,6 +69,36 @@ interface DownloadContextType {
 const DownloadContext = createContext<DownloadContextType | undefined>(undefined);
 
 /**
+ * Helper function to fetch with retry logic
+ * @param url - URL to fetch
+ * @param options - Fetch options
+ * @param retries - Number of retries
+ * @param backoff - Backoff time in ms
+ */
+const fetchWithRetry = async (
+  url: string, 
+  options: RequestInit = {}, 
+  retries = 3, 
+  backoff = 300
+): Promise<Response> => {
+  try {
+    const response = await fetch(url, options);
+    if (!response.ok) {
+      throw new Error(`HTTP error! Status: ${response.status}`);
+    }
+    return response;
+  } catch (error) {
+    if (retries <= 1) throw error;
+    
+    // Wait for backoff time
+    await new Promise(resolve => setTimeout(resolve, backoff));
+    
+    // Retry with exponential backoff
+    return fetchWithRetry(url, options, retries - 1, backoff * 2);
+  }
+};
+
+/**
  * Provider component for download state management
  */
 export function DownloadProvider({ children }: { children: ReactNode }) {
@@ -87,20 +117,22 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
     try {
       setIsLoading(true);
       // Fetch both queue and stats in parallel for efficiency
-      const [queueResponse, statsResponse] = await Promise.all([
-        fetch(`${apiBaseUrl}/queue`),
-        fetch(`${apiBaseUrl}/queue/stats`)
+      const [queueResponse, statsResponse] = await Promise.allSettled([
+        fetchWithRetry(`${apiBaseUrl}/queue`),
+        fetchWithRetry(`${apiBaseUrl}/queue/stats`)
       ]);
       
-      if (!queueResponse.ok || !statsResponse.ok) {
+      // Handle responses based on their status
+      if (queueResponse.status === 'fulfilled' && statsResponse.status === 'fulfilled') {
+        const queueData = await queueResponse.value.json();
+        const statsData = await statsResponse.value.json();
+        
+        setQueue(queueData.queue || []);
+        setStats(statsData.stats || null);
+      } else {
+        // At least one request failed
         throw new Error("Failed to fetch queue data");
       }
-      
-      const queueData = await queueResponse.json();
-      const statsData = await statsResponse.json();
-      
-      setQueue(queueData.queue || []);
-      setStats(statsData.stats || null);
     } catch (error) {
       console.error("Error fetching queue:", error);
       // Don't set isLoading to false on error if we already have queue items
@@ -119,12 +151,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
   // Fetch queue pause status
   const fetchQueueStatus = async () => {
     try {
-      const response = await fetch(`${apiBaseUrl}/queue/status`);
-      
-      if (!response.ok) {
-        throw new Error("Failed to fetch queue status");
-      }
-      
+      const response = await fetchWithRetry(`${apiBaseUrl}/queue/status`);
       const data = await response.json();
       setIsPaused(data.paused || false);
     } catch (error) {
@@ -140,7 +167,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
     // Set up more frequent polling for active downloads
     const pollInterval = setInterval(() => {
       fetchQueue();
-    }, 1000); // Poll every second for more responsive updates
+    }, 2000); // Poll every 2 seconds for more responsive updates
     
     // Set up less frequent polling for queue status
     const statusInterval = setInterval(() => {
@@ -162,13 +189,9 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
   // Remove an item from the queue
   const removeItem = async (id: string) => {
     try {
-      const response = await fetch(`${apiBaseUrl}/queue/${id}`, {
+      const response = await fetchWithRetry(`${apiBaseUrl}/queue/${id}`, {
         method: "DELETE",
       });
-      
-      if (!response.ok) {
-        throw new Error("Failed to remove item");
-      }
       
       // Update local state
       setQueue(prev => prev.filter(item => item.id !== id));
@@ -182,13 +205,9 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
   // Stop a download
   const stopDownload = async (id: string) => {
     try {
-      const response = await fetch(`${apiBaseUrl}/queue/${id}/stop`, {
+      await fetchWithRetry(`${apiBaseUrl}/queue/${id}/stop`, {
         method: "POST",
       });
-      
-      if (!response.ok) {
-        throw new Error("Failed to stop download");
-      }
       
       // Refresh queue
       fetchQueue();
@@ -202,13 +221,9 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
   // Retry a failed download
   const retryDownload = async (id: string) => {
     try {
-      const response = await fetch(`${apiBaseUrl}/queue/${id}/retry`, {
+      await fetchWithRetry(`${apiBaseUrl}/queue/${id}/retry`, {
         method: "POST",
       });
-      
-      if (!response.ok) {
-        throw new Error("Failed to retry download");
-      }
       
       // Refresh queue
       fetchQueue();
@@ -222,13 +237,9 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
   // Prioritize a download
   const prioritizeDownload = async (id: string) => {
     try {
-      const response = await fetch(`${apiBaseUrl}/queue/${id}/prioritize`, {
+      await fetchWithRetry(`${apiBaseUrl}/queue/${id}/prioritize`, {
         method: "POST",
       });
-      
-      if (!response.ok) {
-        throw new Error("Failed to prioritize download");
-      }
       
       // Refresh queue
       fetchQueue();
@@ -243,17 +254,13 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
   const toggleQueuePause = async () => {
     try {
       setIsTogglingPause(true);
-      const response = await fetch(`${apiBaseUrl}/queue/pause`, {
+      await fetchWithRetry(`${apiBaseUrl}/queue/pause`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ paused: !isPaused }),
       });
-      
-      if (!response.ok) {
-        throw new Error("Failed to toggle queue pause state");
-      }
       
       setIsPaused(!isPaused);
       toast.success(isPaused ? "Queue resumed" : "Queue paused");
@@ -269,13 +276,9 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
   const clearQueue = async () => {
     try {
       setIsClearing(true);
-      const response = await fetch(`${apiBaseUrl}/queue/clear`, {
+      await fetchWithRetry(`${apiBaseUrl}/queue/clear`, {
         method: "POST",
       });
-      
-      if (!response.ok) {
-        throw new Error("Failed to clear queue");
-      }
       
       setQueue([]);
       toast.success("Queue cleared");
@@ -291,7 +294,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
   const submitDownload = async (data: DownloadFormData) => {
     try {
       // Submit to API
-      const response = await fetch(`${apiBaseUrl}/queue`, {
+      const response = await fetchWithRetry(`${apiBaseUrl}/queue`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -303,10 +306,6 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
           priority: data.priority,
         }),
       });
-      
-      if (!response.ok) {
-        throw new Error("Failed to add download to queue");
-      }
       
       const result = await response.json();
       
@@ -325,7 +324,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
   // Submit batch downloads
   const submitBatchDownload = async (selectedItems: string[], formData: DownloadFormData) => {
     try {
-      const response = await fetch(`${apiBaseUrl}/queue/batch`, {
+      const response = await fetchWithRetry(`${apiBaseUrl}/queue/batch`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -337,10 +336,6 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
           priority: formData.priority,
         }),
       });
-      
-      if (!response.ok) {
-        throw new Error("Failed to add batch downloads to queue");
-      }
       
       const result = await response.json();
       
