@@ -2,6 +2,9 @@
 
 A Next.js application for downloading files and playlists from the Internet Archive to your server.
 
+# Speical thanks
+This repo is forked from `https://github.com/john-corcoran/internetarchive-downloader` so a speical thanks to John Corocoran for his hard work
+
 ## Features
 
 - Download individual files or entire playlists from Internet Archive
